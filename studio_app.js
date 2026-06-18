@@ -548,8 +548,13 @@
 
     document.addEventListener('paste', handlePaste);
 
-    /* 初期データ */
+    /* 初期データ + IndexedDB 可用性チェック（file:// の Safari 等で無効な場合に通知） */
     setMode('register');
+    if (!window.indexedDB) {
+      UI.toast('このブラウザでは IndexedDB が無効のため帳票・履歴を保存できません（Chrome/Edge/Firefox 推奨）', 'warning', 8000);
+    } else {
+      FormDB.open().catch(() => UI.toast('IndexedDB を初期化できませんでした。Chrome/Edge で開くと保存できます', 'warning', 8000));
+    }
     loadForms();
     refreshHistory();
   }
