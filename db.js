@@ -28,7 +28,14 @@ const FormDB = (() => {
         reject(new Error('このブラウザは IndexedDB に対応していません'));
         return;
       }
-      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      let settled = false, timer;
+      const finish = (fn, arg) => { if (settled) return; settled = true; clearTimeout(timer); fn(arg); };
+      let req;
+      try { req = indexedDB.open(DB_NAME, DB_VERSION); }
+      catch (err) { reject(err); return; }
+      /* 別タブが旧バージョンを掴んでアップグレードが進まない等のハング対策 */
+      timer = setTimeout(() => finish(reject,
+        new Error('IndexedDB の初期化がタイムアウトしました。本ツールを開いた他のタブを閉じて再読込してください')), 8000);
       req.onupgradeneeded = e => {
         const db = e.target.result;
         if (!db.objectStoreNames.contains(STORE_FORMS)) {
@@ -47,9 +54,17 @@ const FormDB = (() => {
           pr.createIndex('name',      'name',      { unique: false });
         }
       };
-      req.onsuccess = e => resolve(e.target.result);
-      req.onerror   = () => reject(req.error || new Error('IndexedDB を開けませんでした'));
+      req.onsuccess = e => {
+        const db = e.target.result;
+        /* 別タブが新バージョンへ更新しようとしたら接続を閉じてブロックを避ける */
+        db.onversionchange = () => { try { db.close(); } catch (_) {} _dbPromise = null; };
+        finish(resolve, db);
+      };
+      req.onerror   = () => finish(reject, req.error || new Error('IndexedDB を開けませんでした'));
+      req.onblocked = () => finish(reject, new Error('別タブで本ツールが開いているためデータベースを更新できません。他のタブを閉じて再読込してください'));
     });
+    /* 失敗時はキャッシュを破棄し、次回アクセスで再試行できるようにする */
+    _dbPromise.catch(() => { _dbPromise = null; });
     return _dbPromise;
   }
 

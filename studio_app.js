@@ -302,21 +302,28 @@
       isSample: S.isSampleForm,
     };
     if (S.editingId) { const old = S.forms.find(f => f.id === S.editingId); if (old) form.createdAt = old.createdAt; }
+    /* 即時フィードバック（保存処理がハングしても無反応にならないように） */
+    const btn = $('btnSaveForm'); const orig = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> 保存中…';
     try {
       await FormDB.putForm(form);
       UI.refreshRegSteps({ name: true, ref: true, anchor: true, ocr: true, save: true });
       await loadForms();
       cancelEdit();
       UI.toast(`帳票「${name}」を保存しました`, 'success');
-    } catch (e) { UI.toast('保存に失敗しました: ' + e.message, 'error'); }
+    } catch (e) {
+      UI.toast('保存に失敗しました: ' + (e.message || e), 'error', 6000);
+    } finally { btn.disabled = false; btn.innerHTML = orig; }
   }
 
   /* ── サンプル帳票 ───────────────────────────────────── */
   async function loadSampleForms() {
-    const samples = SampleForms.build();
-    for (const f of samples) await FormDB.putForm(f);
-    await loadForms();
-    UI.toast(`${samples.length} 件のサンプル帳票を登録しました`, 'success');
+    try {
+      const samples = SampleForms.build();
+      for (const f of samples) await FormDB.putForm(f);
+      await loadForms();
+      UI.toast(`${samples.length} 件のサンプル帳票を登録しました`, 'success');
+    } catch (e) { UI.toast('サンプル登録に失敗しました: ' + (e.message || e), 'error', 6000); }
   }
   function openSampleFormModal() {
     const grid = $('sampleFormGrid'); grid.innerHTML = '';
