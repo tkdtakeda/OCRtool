@@ -131,6 +131,18 @@ const OcrProcessor = (() => {
         c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
   }
 
-  return { recognize, terminate, normalize };
+  /**
+   * 一桁の漢数字を算用数字へ変換する（一→1 等）。
+   * 漢字を含む氏名欄などを壊す恐れがあるため、呼び出し側でオプトイン（既定OFF）。
+   * @param {string} s
+   * @returns {string}
+   */
+  const KANJI_NUM = { '〇':'0','零':'0','一':'1','二':'2','三':'3','四':'4','五':'5','六':'6','七':'7','八':'8','九':'9' };
+  function kanjiToNum(s) {
+    if (!s) return s;
+    return s.replace(/[〇零一二三四五六七八九]/g, c => KANJI_NUM[c]);
+  }
+
+  return { recognize, terminate, normalize, kanjiToNum };
 
 })();

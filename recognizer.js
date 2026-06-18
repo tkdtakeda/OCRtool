@@ -117,6 +117,7 @@ const Recognizer = (() => {
     const lang = form.ocrSettings?.lang || 'eng';
     const whitelist = form.ocrSettings?.whitelist || '';
     const doNorm = form.ocrSettings?.normalize !== false;   // 既定で正規化ON
+    const doKanji = !!form.ocrSettings?.normalizeKanji;      // 漢数字→数字（既定OFF）
     const fields = [];
     for (let i = 0; i < regions.length; i++) {
       const region = regions[i];
@@ -134,6 +135,7 @@ const Recognizer = (() => {
         : 0;
       let text = (res.fullText || '').trim();
       if (doNorm) text = OcrProcessor.normalize(text);
+      if (doKanji) text = OcrProcessor.kanjiToNum(text);
       fields.push({
         name: region.name,
         text,
@@ -158,7 +160,7 @@ const Recognizer = (() => {
    * @returns {Promise<Array<{ psm, text, confidence, error }>>}
    */
   async function comparePsm(resultCanvas, translation, region, psmList, opts, onProg) {
-    const { lang = 'eng', whitelist = '', normalize = true } = opts || {};
+    const { lang = 'eng', whitelist = '', normalize = true, kanji = false } = opts || {};
     const crop = LineRemovalProcessor.extractRegion(resultCanvas, translation, region);
     const out = [];
     for (let i = 0; i < psmList.length; i++) {
@@ -170,6 +172,7 @@ const Recognizer = (() => {
         ? Math.round(res.words.reduce((s, w) => s + w.confidence, 0) / res.words.length) : 0;
       let text = (res.fullText || '').trim();
       if (normalize) text = OcrProcessor.normalize(text);
+      if (kanji) text = OcrProcessor.kanjiToNum(text);
       out.push({ psm, text, confidence: conf, error: res.error || null });
     }
     return out;
