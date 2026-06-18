@@ -255,6 +255,83 @@ const LineRemovalProcessor = (() => {
     return result;
   }
 
+  /* ── 傾き補正: キャンバス回転 ───────────────────────── */
+  /**
+   * OpenCV の getRotationMatrix2D で回転（matcherEngine と同じ符号規約）
+   * angleDeg > 0 = 反時計回り。元サイズを保持し、余白は白（帳票余白）で埋める。
+   * 統合ツールの認識パイプラインで使用（罫線除去前の傾き補正）。
+   * @param {HTMLCanvasElement} srcCanvas
+   * @param {number}            angleDeg
+   * @returns {HTMLCanvasElement}  新規キャンバス
+   */
+  function rotateCanvas(srcCanvas, angleDeg) {
+    /* 無回転ならコピーを返す */
+    if (!angleDeg || Math.abs(angleDeg) < 0.001) {
+      const out = document.createElement('canvas');
+      out.width  = srcCanvas.width;
+      out.height = srcCanvas.height;
+      out.getContext('2d').drawImage(srcCanvas, 0, 0);
+      return out;
+    }
+    let src = null, dst = null, M = null;
+    try {
+      src = cv.imread(srcCanvas);
+      const center = new cv.Point(src.cols / 2, src.rows / 2);
+      M   = cv.getRotationMatrix2D(center, angleDeg, 1.0);
+      dst = new cv.Mat();
+      cv.warpAffine(
+        src, dst, M,
+        new cv.Size(src.cols, src.rows),
+        cv.INTER_LINEAR, cv.BORDER_CONSTANT,
+        new cv.Scalar(255, 255, 255, 255)   // 白背景
+      );
+      const out = document.createElement('canvas');
+      out.width  = srcCanvas.width;
+      out.height = srcCanvas.height;
+      cv.imshow(out, dst);
+      return out;
+    } catch (e) {
+      /* フォールバック: コピーを返す */
+      const out = document.createElement('canvas');
+      out.width  = srcCanvas.width;
+      out.height = srcCanvas.height;
+      out.getContext('2d').drawImage(srcCanvas, 0, 0);
+      return out;
+    } finally {
+      if (src) try { src.delete(); } catch (_) {}
+      if (dst) try { dst.delete(); } catch (_) {}
+      if (M)   try { M.delete();   } catch (_) {}
+    }
+  }
+
+  /* ── OCR 領域の切り出し ─────────────────────────────── */
+  /**
+   * 罫線除去結果キャンバスから、基準画像座標 + 平行移動量で OCR 対象領域を切り出す。
+   * 統合ツールでは loc に「基準画像→入力画像の平行移動量」を、
+   * rect に「基準画像上の絶対座標」を渡す（x = loc.x + rect.x）。
+   * @param {HTMLCanvasElement} srcCanvas  切り出し元
+   * @param {{ x:number, y:number }} loc   平行移動量（原点ずれ）
+   * @param {{ x:number, y:number, w:number, h:number }} rect  基準画像上の矩形
+   * @returns {HTMLCanvasElement|null}
+   */
+  function extractRegion(srcCanvas, loc, rect) {
+    const x = Math.round((loc?.x || 0) + rect.x);
+    const y = Math.round((loc?.y || 0) + rect.y);
+    const w = Math.max(1, Math.round(rect.w));
+    const h = Math.max(1, Math.round(rect.h));
+    /* 画像境界でクランプ */
+    const sx = Math.max(0, x);
+    const sy = Math.max(0, y);
+    const clampedW = Math.min(w - (sx - x), srcCanvas.width  - sx);
+    const clampedH = Math.min(h - (sy - y), srcCanvas.height - sy);
+    if (clampedW <= 0 || clampedH <= 0) return null;
+    const out = document.createElement('canvas');
+    out.width  = clampedW;
+    out.height = clampedH;
+    out.getContext('2d').drawImage(srcCanvas, sx, sy, clampedW, clampedH, 0, 0, clampedW, clampedH);
+    return out;
+  }
+
   /* ── Render / cleanup ───────────────────────────────── */
   /**
    * Mat をキャンバスに描画する
@@ -275,6 +352,6 @@ const LineRemovalProcessor = (() => {
     });
   }
 
-  return { process, renderToCanvas, cleanupMats, defaultParams };
+  return { process, renderToCanvas, cleanupMats, defaultParams, rotateCanvas, extractRegion };
 
 })();

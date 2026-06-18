@@ -213,6 +213,7 @@
 
   /* ── Sample management ──────────────────────────────── */
   function initSamples() {
+    if (typeof SampleGenerator === 'undefined') return; /* サンプル生成スクリプト未配置でも動作させる */
     const samples = SampleGenerator.generate();
     const grid    = document.getElementById('sampleGrid');
     if (!grid) return;

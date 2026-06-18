@@ -299,6 +299,10 @@ const MatcherApp = (() => {
 
   /* ── Sample Data ───────────────────────────────────── */
   function loadSampleData() {
+    if (typeof SampleDataGenerator === 'undefined') {
+      alert('サンプルデータ生成スクリプト (sample_generator.js) が見つかりません。');
+      return;
+    }
     const forms = SampleDataGenerator.generateAll();
     forms.forEach(form =>
       form.templates.forEach(tpl =>
