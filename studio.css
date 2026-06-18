@@ -196,6 +196,27 @@
 .debug-sec .plabel { min-width: 92px; }
 .debug-acts { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--c-border); flex-wrap: wrap; }
 
+/* プリセットバー */
+.preset-bar { display: flex; align-items: center; gap: 7px; padding: 8px 10px; margin-bottom: 10px; background: var(--c-surface2); border: 1px solid var(--c-border); border-radius: var(--r-sm); flex-wrap: wrap; }
+.preset-lbl { font-size: .76rem; font-weight: 700; color: var(--c-text-2); display: flex; align-items: center; gap: 5px; }
+.preset-bar #presetSelect { min-width: 150px; flex: 1; max-width: 280px; }
+
+/* PSM 比較 */
+.psm-ctl { display: flex; align-items: center; gap: 8px; margin: 10px 0; flex-wrap: wrap; }
+.psm-ctl #psmRegionSelect { min-width: 160px; }
+.psm-crop { display: flex; align-items: center; gap: 8px; margin: 8px 0; padding: 6px; background: repeating-conic-gradient(#dde5ef 0% 25%, transparent 0% 50%) 0 0 / 12px 12px; border: 1px solid var(--c-border); border-radius: var(--r-sm); overflow: auto; }
+.psm-crop-lbl { font-size: .72rem; color: var(--c-text-3); flex-shrink: 0; }
+.psm-crop img { max-height: 60px; image-rendering: pixelated; background: #fff; }
+.psm-results { display: flex; flex-direction: column; gap: 6px; }
+.psm-row { display: grid; grid-template-columns: 130px 1fr auto auto; align-items: center; gap: 10px; padding: 7px 10px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); }
+.psm-row.is-best { border-color: var(--c-suc); box-shadow: 0 0 0 1px #d1fae5; }
+.psm-tag { font-size: .74rem; font-weight: 700; color: var(--c-text-2); }
+.psm-tag small { display: block; font-weight: 400; color: var(--c-text-3); font-size: .66rem; }
+.psm-text { font-family: 'IBM Plex Mono', monospace; font-size: .84rem; color: var(--c-text); word-break: break-all; white-space: pre-wrap; }
+.psm-text.empty { color: var(--c-text-3); font-style: italic; }
+.psm-conf { font-family: 'IBM Plex Mono', monospace; font-size: .72rem; font-weight: 700; padding: 1px 8px; border-radius: 9px; }
+.psm-conf.hi { background: #DCFCE7; color: #166534; } .psm-conf.mid { background: #FEF3C7; color: #92400E; } .psm-conf.lo { background: #FEE2E2; color: #991B1B; }
+
 .recog-progress { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
 .field-results { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
 .field-row { border: 1px solid var(--c-border); border-radius: var(--r-sm); overflow: hidden; animation: slideUp .2s ease both; }
