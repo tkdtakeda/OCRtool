@@ -198,6 +198,10 @@
 .debug-sec { display: flex; flex-direction: column; gap: 7px; padding: 4px 0; }
 .debug-sec-ttl { font-size: .74rem; font-weight: 700; color: var(--c-text-2); display: flex; align-items: center; gap: 6px; padding-bottom: 4px; border-bottom: 1px dashed var(--c-border); }
 .debug-sec .plabel { min-width: 92px; }
+.pinput { flex: 1; min-width: 0; padding: 4px 7px; border: 1px solid var(--c-border-dk); border-radius: var(--r-sm); font-family: 'IBM Plex Mono', monospace; font-size: .74rem; color: var(--c-text); }
+.pinput:focus { outline: none; border-color: var(--c-pri); box-shadow: 0 0 0 2px var(--c-pri-lt); }
+.wl-quick { display: flex; gap: 4px; flex-wrap: wrap; margin: -2px 0 2px; }
+.wl-quick .btn { padding: 2px 8px; font-size: .68rem; }
 .debug-acts { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--c-border); flex-wrap: wrap; }
 
 /* プリセットバー */
