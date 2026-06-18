@@ -104,11 +104,13 @@
 .cs-name-input { flex: 1; padding: 6px 10px; border: 1px solid var(--c-border-dk); border-radius: var(--r-sm); font-size: .82rem; }
 .cs-name-input:focus { outline: none; border-color: var(--c-pri); box-shadow: 0 0 0 2px var(--c-pri-lt); }
 
-.reg-canvas-wrap { flex: 1; min-height: 240px; overflow: auto; background: repeating-conic-gradient(#dde5ef 0% 25%, transparent 0% 50%) 0 0 / 14px 14px; border: 1px solid var(--c-border); border-radius: var(--r-sm); display: flex; align-items: flex-start; justify-content: center; padding: 8px; }
+/* display:flex + 子の margin:auto で「小さい時は中央 / 大きい時は全端までスクロール可」。
+   justify-content:center だとはみ出した先頭側がスクロール不能になるため使わない。 */
+.reg-canvas-wrap { flex: 1; min-height: 240px; overflow: auto; background: repeating-conic-gradient(#dde5ef 0% 25%, transparent 0% 50%) 0 0 / 14px 14px; border: 1px solid var(--c-border); border-radius: var(--r-sm); display: flex; padding: 8px; }
 .reg-canvas-wrap.panning { cursor: grabbing; }
 .canvas-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--c-text-3); margin: auto; }
 .canvas-placeholder i { font-size: 2rem; color: var(--c-border-dk); }
-#regCanvas { box-shadow: var(--sh-sm); background: #fff; }
+#regCanvas { margin: auto; box-shadow: var(--sh-sm); background: #fff; }
 
 /* ── ミニリスト ─────────────────────────────────────── */
 .list-block { display: flex; flex-direction: column; gap: 6px; }
