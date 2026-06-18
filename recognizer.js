@@ -97,6 +97,7 @@ const Recognizer = (() => {
     /* ⑥ OCR領域ごとに認識 */
     const regions = form.ocrRegions || [];
     const psm  = form.ocrSettings?.psm ?? 3;
+    const lang = form.ocrSettings?.lang || 'eng';
     const fields = [];
     for (let i = 0; i < regions.length; i++) {
       const region = regions[i];
@@ -108,7 +109,7 @@ const Recognizer = (() => {
       }
       const res = await OcrProcessor.recognize(cropCanvas, psm, prog => {
         cb.onOcr && cb.onOcr(i, regions.length, region.name, prog.status, prog.progress);
-      });
+      }, lang);
       const conf = (!res.error && res.words.length)
         ? Math.round(res.words.reduce((sum, w) => sum + w.confidence, 0) / res.words.length)
         : 0;
