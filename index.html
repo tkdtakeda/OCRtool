@@ -149,7 +149,9 @@
                   <option value="13">1行(生)</option>
                 </select>
               </div>
-              <p class="hint-text">日本語ラベルを含む領域は「日本語＋英語」を推奨。初回は言語データのDLに時間がかかります。</p>
+              <div class="prow"><label class="plabel">文字ホワイトリスト</label><input type="text" id="regWhitelist" class="pinput" placeholder="空=制限なし 例:0123456789" autocomplete="off"></div>
+              <div class="prow"><label class="plabel">正規化 ①→1 / 全角→半角</label><label class="ptoggle"><input type="checkbox" id="regNormalize" checked><span class="ptoggle-track"></span></label></div>
+              <p class="hint-text">日本語ラベルを含む領域は「日本語＋英語」を推奨。番号など数字欄はホワイトリストで字種を限定すると誤認を防げます。</p>
             </div>
           </div>
 
@@ -304,7 +306,15 @@
           <div class="debug-sec">
             <div class="debug-sec-ttl"><i class="fas fa-spell-check"></i> OCR</div>
             <div class="prow"><label class="plabel">言語</label><select id="dbgLang" class="pselect"><option value="eng">英語</option><option value="jpn+eng">日本語＋英語</option><option value="jpn">日本語</option></select></div>
-            <div class="prow"><label class="plabel">PSM</label><select id="dbgPsm" class="pselect"><option value="3">自動</option><option value="6">単一ブロック</option><option value="4">縦長</option><option value="7">単一行</option><option value="8">単一単語</option><option value="13">1行(生)</option></select></div>
+            <div class="prow"><label class="plabel">PSM</label><select id="dbgPsm" class="pselect"><option value="3">自動</option><option value="6">単一ブロック</option><option value="4">縦長</option><option value="7">単一行</option><option value="8">単一単語</option><option value="10">単一文字</option><option value="11">疎</option><option value="13">1行(生)</option></select></div>
+            <div class="prow"><label class="plabel">文字ホワイトリスト</label><input type="text" id="dbgWhitelist" class="pinput" placeholder="空=制限なし" autocomplete="off"></div>
+            <div class="wl-quick" id="dbgWlQuick">
+              <button type="button" class="btn btn-ghost btn-sm" data-wl="0123456789">数字</button>
+              <button type="button" class="btn btn-ghost btn-sm" data-wl="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ">英数(大)</button>
+              <button type="button" class="btn btn-ghost btn-sm" data-wl="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-/.">コード</button>
+              <button type="button" class="btn btn-ghost btn-sm" data-wl="">クリア</button>
+            </div>
+            <div class="prow"><label class="plabel">正規化 ①→1/全角→半角</label><label class="ptoggle"><input type="checkbox" id="dbgNormalize" checked><span class="ptoggle-track"></span></label></div>
           </div>
           <div class="debug-sec">
             <div class="debug-sec-ttl"><i class="fas fa-sliders"></i> 二値化</div>
@@ -452,7 +462,7 @@
           <li>良い値が決まったら<b>「現在値を保存」でプリセット化</b>（IndexedDB保存）。以後はプリセットを選んで「適用」→「再実行」で素早く切替できます。「設定を帳票に保存」で帳票自体にも反映可能</li>
           <li><b>「全PSM比較」</b>: 同じ罫線除去結果に対し各PSMの読み取り結果を一覧表示。最良を「採用」して即反映できます</li>
           <li><b>言語</b>：既定は英語。日本語ラベルを含む領域は <b>「日本語＋英語」</b>を選択してください（初回は言語データのDLに時間がかかります）</li>
-          <li>「AK1029」等が読めない場合：①OCR領域から「注文No」など<b>日本語ラベルを除外</b>、②セル区切りの<b>縦罫線を除去</b>（垂直罫線パラメータを調整）、③PSMを「単一行/単一単語」に</li>
+          <li>数字が<b>丸数字（①②⑨）</b>になるのは、セル枠＋日本語モデルが原因。対策は <b>文字ホワイトリスト</b>（例 <code>0123456789</code>）で字種を限定 ＋ <b>正規化</b>（①→1・全角→半角）をON。さらに ①OCR領域から「注文No」など<b>日本語ラベルを除外</b>、②セル区切りの<b>縦罫線を除去</b>、③PSMを「単一行/単一単語」に、④数字欄は言語を<b>英語</b>に、も有効</li>
           <li>罫線除去後プレビューは右上のボタンで<b>拡大</b>・ドラッグで<b>移動</b>できます</li>
         </ul>
       </div>

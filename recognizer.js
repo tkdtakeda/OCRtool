@@ -115,6 +115,8 @@ const Recognizer = (() => {
     const regions = form.ocrRegions || [];
     const psm  = form.ocrSettings?.psm ?? 3;
     const lang = form.ocrSettings?.lang || 'eng';
+    const whitelist = form.ocrSettings?.whitelist || '';
+    const doNorm = form.ocrSettings?.normalize !== false;   // 既定で正規化ON
     const fields = [];
     for (let i = 0; i < regions.length; i++) {
       const region = regions[i];
@@ -126,13 +128,15 @@ const Recognizer = (() => {
       }
       const res = await OcrProcessor.recognize(cropCanvas, psm, prog => {
         cb.onOcr && cb.onOcr(i, regions.length, region.name, prog.status, prog.progress);
-      }, lang);
+      }, lang, whitelist);
       const conf = (!res.error && res.words.length)
         ? Math.round(res.words.reduce((sum, w) => sum + w.confidence, 0) / res.words.length)
         : 0;
+      let text = (res.fullText || '').trim();
+      if (doNorm) text = OcrProcessor.normalize(text);
       fields.push({
         name: region.name,
-        text: (res.fullText || '').trim(),
+        text,
         confidence: conf,
         error: res.error || null,
         cropDataURL: cropCanvas.toDataURL('image/png'),
@@ -153,17 +157,20 @@ const Recognizer = (() => {
    * @param {Function} onProg  (idx, total, psm) => void
    * @returns {Promise<Array<{ psm, text, confidence, error }>>}
    */
-  async function comparePsm(resultCanvas, translation, region, psmList, lang, onProg) {
+  async function comparePsm(resultCanvas, translation, region, psmList, opts, onProg) {
+    const { lang = 'eng', whitelist = '', normalize = true } = opts || {};
     const crop = LineRemovalProcessor.extractRegion(resultCanvas, translation, region);
     const out = [];
     for (let i = 0; i < psmList.length; i++) {
       const psm = psmList[i];
       if (onProg) onProg(i, psmList.length, psm);
       if (!crop) { out.push({ psm, text: '', confidence: 0, error: '領域切り出し失敗' }); continue; }
-      const res = await OcrProcessor.recognize(crop, psm, () => {}, lang);
+      const res = await OcrProcessor.recognize(crop, psm, () => {}, lang, whitelist);
       const conf = (!res.error && res.words.length)
         ? Math.round(res.words.reduce((s, w) => s + w.confidence, 0) / res.words.length) : 0;
-      out.push({ psm, text: (res.fullText || '').trim(), confidence: conf, error: res.error || null });
+      let text = (res.fullText || '').trim();
+      if (normalize) text = OcrProcessor.normalize(text);
+      out.push({ psm, text, confidence: conf, error: res.error || null });
     }
     return out;
   }

@@ -72,7 +72,7 @@
     $('refPreview').style.display = 'none'; $('refDropHint').style.display = 'flex';
     $('rectNameInput').value = '';
     applyLineRemovalToUI(LineRemovalProcessor.defaultParams());
-    $('regPsm').value = '7'; $('regLang').value = 'eng';
+    $('regPsm').value = '7'; $('regLang').value = 'eng'; $('regWhitelist').value = ''; $('regNormalize').checked = true;
     setDrawMode('anchor');
     $('regCanvas').style.display = 'none'; $('regCanvasPlaceholder').style.display = 'flex';
     $('editorEmpty').classList.add('hidden'); $('editorForm').classList.remove('hidden');
@@ -91,6 +91,7 @@
     S.zoom = 1; S.pending = null;
     applyLineRemovalToUI(f.lineRemoval || LineRemovalProcessor.defaultParams());
     $('regPsm').value = String(f.ocrSettings?.psm ?? 7); $('regLang').value = f.ocrSettings?.lang || 'eng';
+    $('regWhitelist').value = f.ocrSettings?.whitelist || ''; $('regNormalize').checked = f.ocrSettings?.normalize !== false;
     $('editorEmpty').classList.add('hidden'); $('editorForm').classList.remove('hidden');
     setDrawMode('anchor');
     UI.renderAnchorList(S.anchors, removeAnchor);
@@ -297,7 +298,7 @@
       referenceImage: { dataURL: S.refDataURL, w: S.refNatW, h: S.refNatH },
       anchors: S.anchors.map(a => ({ ...a })),
       ocrRegions: S.regions.map(r => ({ ...r })),
-      ocrSettings: { psm: parseInt($('regPsm').value, 10), lang: $('regLang').value },
+      ocrSettings: { psm: parseInt($('regPsm').value, 10), lang: $('regLang').value, whitelist: $('regWhitelist').value, normalize: $('regNormalize').checked },
       lineRemoval: collectLineRemoval(),
       isSample: S.isSampleForm,
     };
@@ -466,7 +467,10 @@
   /* デバッグパネル設定で上書きした帳票を返す */
   function effectiveForm() {
     const form = S.forms.find(f => f.id === S.recogFormId); if (!form) return null;
-    return { ...form, lineRemoval: collectDbgLineRemoval(), ocrSettings: { psm: parseInt($('dbgPsm').value, 10), lang: $('dbgLang').value } };
+    return { ...form, lineRemoval: collectDbgLineRemoval(), ocrSettings: collectDbgOcr() };
+  }
+  function collectDbgOcr() {
+    return { psm: parseInt($('dbgPsm').value, 10), lang: $('dbgLang').value, whitelist: $('dbgWhitelist').value, normalize: $('dbgNormalize').checked };
   }
 
   /* デバッグパネル: 値の収集 / UI 反映 / 二値化行トグル */
@@ -485,6 +489,7 @@
     const set = (id, val) => { const e = $(id); if (e) e[e.type === 'checkbox' ? 'checked' : 'value'] = val; };
     const txt = (id, val) => { const e = $(id); if (e) e.textContent = val; };
     set('dbgLang', form.ocrSettings?.lang || 'eng'); set('dbgPsm', String(form.ocrSettings?.psm ?? 3));
+    set('dbgWhitelist', form.ocrSettings?.whitelist || ''); set('dbgNormalize', form.ocrSettings?.normalize !== false);
     set('dbgBinaryMethod', p.binaryMethod);
     set('dbgManualThresh', p.manualThresh); txt('dbgValThresh', p.manualThresh);
     set('dbgAdaptiveBlock', p.adaptiveBlock); txt('dbgValBlock', p.adaptiveBlock);
@@ -510,7 +515,7 @@
   async function saveSettingsToForm() {
     const form = S.forms.find(f => f.id === S.recogFormId); if (!form) return UI.toast('対象帳票がありません', 'warning');
     form.lineRemoval = collectDbgLineRemoval();
-    form.ocrSettings = { psm: parseInt($('dbgPsm').value, 10), lang: $('dbgLang').value };
+    form.ocrSettings = collectDbgOcr();
     try { await FormDB.putForm(form); await loadForms(); UI.toast(`「${form.name}」に設定を保存しました`, 'success'); }
     catch (e) { UI.toast('保存に失敗しました: ' + e.message, 'error'); }
   }
@@ -526,7 +531,7 @@
     if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
   }
   function currentDbgPreset() {
-    return { ocrSettings: { psm: parseInt($('dbgPsm').value, 10), lang: $('dbgLang').value }, lineRemoval: collectDbgLineRemoval() };
+    return { ocrSettings: collectDbgOcr(), lineRemoval: collectDbgLineRemoval() };
   }
   async function savePreset() {
     const name = prompt('プリセット名を入力', `設定 ${new Date().toLocaleString('ja-JP')}`);
@@ -572,8 +577,8 @@
       if (prep.error) { $('psmProgress').classList.add('hidden'); $('btnPsmRun').disabled = false; return UI.toast('前処理エラー: ' + prep.error, 'error'); }
       const crop = LineRemovalProcessor.extractRegion(prep.resultCanvas, prep.translation, region);
       if (crop) { $('psmCropImg').src = crop.toDataURL('image/png'); $('psmCrop').classList.remove('hidden'); }
-      const lang = form.ocrSettings.lang || 'eng';
-      const results = await Recognizer.comparePsm(prep.resultCanvas, prep.translation, region, PSM_LIST, lang,
+      const results = await Recognizer.comparePsm(prep.resultCanvas, prep.translation, region, PSM_LIST,
+        { lang: form.ocrSettings.lang || 'eng', whitelist: form.ocrSettings.whitelist || '', normalize: form.ocrSettings.normalize !== false },
         (i, total, psm) => setProg(`PSM ${psm} を認識中… (${i + 1}/${total})`, (i + 1) / total));
       LineRemovalProcessor.cleanupMats(prep.previewMats);
       $('psmProgress').classList.add('hidden');
@@ -688,6 +693,7 @@
       sl.addEventListener('input', () => { vl.textContent = sl.value; });
     });
     $('dbgBinaryMethod').addEventListener('change', updateDbgBinaryRows);
+    $('dbgWlQuick').addEventListener('click', e => { const btn = e.target.closest('button[data-wl]'); if (btn) $('dbgWhitelist').value = btn.dataset.wl; });
     $('debugToggle').addEventListener('click', () => {
       const collapsed = $('debugBody').classList.toggle('is-collapsed');
       $('debugToggle').classList.toggle('is-collapsed', collapsed);

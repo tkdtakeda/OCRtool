@@ -64,7 +64,7 @@ const OcrProcessor = (() => {
    *   error:    string|null
    * }>}
    */
-  async function recognize(canvas, psm, onProgress, lang) {
+  async function recognize(canvas, psm, onProgress, lang, whitelist) {
     /* ログコールバックを更新（ensureWorker 呼び出し前に設定） */
     _logCb = m => {
       if (typeof onProgress === 'function') {
@@ -74,7 +74,12 @@ const OcrProcessor = (() => {
 
     try {
       await ensureWorker(lang);
-      await _worker.setParameters({ tessedit_pageseg_mode: String(psm) });
+      /* 文字ホワイトリスト: 指定時はその文字種のみ出力（丸数字・記号の誤認を防ぐ）。
+         未指定('')は制限なし。前回値が残らないよう毎回明示設定する。 */
+      await _worker.setParameters({
+        tessedit_pageseg_mode: String(psm),
+        tessedit_char_whitelist: whitelist || '',
+      });
 
       const { data } = await _worker.recognize(canvas);
 
@@ -109,6 +114,23 @@ const OcrProcessor = (() => {
     }
   }
 
-  return { recognize, terminate };
+  /* ── Public: normalize ──────────────────────────────── */
+  /**
+   * OCR結果の表記ゆれを正規化する（確定的な後処理）。
+   *   ①〜⑳ / ⓪ → 算用数字、全角英数字 → 半角
+   * @param {string} s
+   * @returns {string}
+   */
+  function normalize(s) {
+    if (!s) return s;
+    return s
+      .replace(/[①-⑨]/g, c => String(c.charCodeAt(0) - 0x2460 + 1))   // ①-⑨ → 1-9
+      .replace(/[⑩-⑳]/g, c => String(c.charCodeAt(0) - 0x2469 + 10))  // ⑩-⑳ → 10-20
+      .replace(/⓪/g, '0')                                                  // ⓪ → 0
+      .replace(/[０-９Ａ-Ｚａ-ｚ]/g,                     // ０-９Ａ-Ｚａ-ｚ → 半角
+        c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+  }
+
+  return { recognize, terminate, normalize };
 
 })();
