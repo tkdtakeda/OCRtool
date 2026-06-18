@@ -293,6 +293,13 @@
     <div id="debugPanel" class="debug-panel hidden">
       <button class="acc-hdr" id="debugToggle"><span><i class="fas fa-flask"></i> 認識設定（デバッグ：数値を変えて再実行）</span><i class="fas fa-chevron-down acc-caret"></i></button>
       <div class="acc-body debug-body" id="debugBody">
+        <div class="preset-bar">
+          <span class="preset-lbl"><i class="fas fa-bookmark"></i> プリセット</span>
+          <select id="presetSelect" class="pselect"><option value="">（プリセットを選択）</option></select>
+          <button id="btnApplyPreset" class="btn btn-ghost btn-sm" title="選択中のプリセットを反映"><i class="fas fa-arrow-down"></i> 適用</button>
+          <button id="btnSavePreset" class="btn btn-outline btn-sm" title="現在の設定をプリセットとして保存"><i class="fas fa-plus"></i> 現在値を保存</button>
+          <button id="btnDeletePreset" class="btn btn-ghost btn-sm" title="選択中のプリセットを削除"><i class="fas fa-trash-can"></i></button>
+        </div>
         <div class="debug-grid">
           <div class="debug-sec">
             <div class="debug-sec-ttl"><i class="fas fa-spell-check"></i> OCR</div>
@@ -328,8 +335,9 @@
         </div>
         <div class="debug-acts">
           <button id="btnRerun" class="btn btn-primary btn-sm"><i class="fas fa-rotate"></i> この設定で再実行</button>
+          <button id="btnPsmCompare" class="btn btn-outline btn-sm"><i class="fas fa-table-list"></i> 全PSM比較</button>
           <button id="btnSaveSettingsToForm" class="btn btn-ghost btn-sm"><i class="fas fa-floppy-disk"></i> 設定を帳票に保存</button>
-          <span class="hint-text">罫線除去後の画像と認識結果を見ながら数値を調整 → 「再実行」</span>
+          <span class="hint-text">数値を調整 → 「再実行」。最適値は「現在値を保存」でプリセット化できます</span>
         </div>
       </div>
     </div>
@@ -386,6 +394,29 @@
   </div>
 </div>
 
+<!-- PSM 全パターン比較モーダル -->
+<div class="modal-overlay hidden" id="psmModal">
+  <div class="modal modal--lg">
+    <div class="modal-hdr"><h2><i class="fas fa-table-list"></i> PSM 全パターン比較</h2>
+      <button class="modal-close" id="closePsmModal"><i class="fas fa-xmark"></i></button>
+    </div>
+    <div class="modal-bdy">
+      <p class="hint-text">同じ罫線除去結果に対して、各 PSM（ページ分割モード）でどう読み取れるかを比較します。現在のデバッグ設定の罫線除去・言語を使用します。</p>
+      <div class="psm-ctl">
+        <label class="plabel">対象領域</label>
+        <select id="psmRegionSelect" class="pselect"></select>
+        <button id="btnPsmRun" class="btn btn-primary btn-sm"><i class="fas fa-play"></i> 全PSMで認識</button>
+      </div>
+      <div id="psmProgress" class="recog-progress hidden">
+        <div class="ocr-progress-track"><div id="psmProgressFill" class="ocr-progress-fill"></div></div>
+        <span id="psmProgressMsg" class="ocr-progress-msg">処理中…</span>
+      </div>
+      <div id="psmCrop" class="psm-crop hidden"><span class="psm-crop-lbl">切り出し画像:</span><img id="psmCropImg" alt=""></div>
+      <div id="psmResults" class="psm-results"></div>
+    </div>
+  </div>
+</div>
+
 <!-- ヘルプ / 設計思想モーダル -->
 <div class="modal-overlay hidden" id="helpModal">
   <div class="modal modal--lg">
@@ -418,7 +449,8 @@
         <h3><i class="fas fa-flask"></i> 認識設定の調整（デバッグ）と日本語OCR</h3>
         <ul>
           <li>OCR実行画面の「認識設定（デバッグ）」で <b>OCR言語・PSM・罫線除去パラメータ</b>（膨張含む）を表示・変更し、「再実行」で再マッチング無しに即試行できます</li>
-          <li>良い値が決まったら「設定を帳票に保存」で帳票に反映できます</li>
+          <li>良い値が決まったら<b>「現在値を保存」でプリセット化</b>（IndexedDB保存）。以後はプリセットを選んで「適用」→「再実行」で素早く切替できます。「設定を帳票に保存」で帳票自体にも反映可能</li>
+          <li><b>「全PSM比較」</b>: 同じ罫線除去結果に対し各PSMの読み取り結果を一覧表示。最良を「採用」して即反映できます</li>
           <li><b>言語</b>：既定は英語。日本語ラベルを含む領域は <b>「日本語＋英語」</b>を選択してください（初回は言語データのDLに時間がかかります）</li>
           <li>「AK1029」等が読めない場合：①OCR領域から「注文No」など<b>日本語ラベルを除外</b>、②セル区切りの<b>縦罫線を除去</b>（垂直罫線パラメータを調整）、③PSMを「単一行/単一単語」に</li>
           <li>罫線除去後プレビューは右上のボタンで<b>拡大</b>・ドラッグで<b>移動</b>できます</li>

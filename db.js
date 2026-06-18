@@ -13,9 +13,10 @@
 const FormDB = (() => {
 
   const DB_NAME    = 'chouhyou_ocr';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   const STORE_FORMS   = 'forms';
   const STORE_RESULTS = 'results';
+  const STORE_PRESETS = 'presets';
 
   let _dbPromise = null;
 
@@ -39,6 +40,11 @@ const FormDB = (() => {
           const r = db.createObjectStore(STORE_RESULTS, { keyPath: 'id' });
           r.createIndex('createdAt', 'createdAt', { unique: false });
           r.createIndex('formId',    'formId',    { unique: false });
+        }
+        if (!db.objectStoreNames.contains(STORE_PRESETS)) {
+          const pr = db.createObjectStore(STORE_PRESETS, { keyPath: 'id' });
+          pr.createIndex('createdAt', 'createdAt', { unique: false });
+          pr.createIndex('name',      'name',      { unique: false });
         }
       };
       req.onsuccess = e => resolve(e.target.result);
@@ -105,11 +111,20 @@ const FormDB = (() => {
   function deleteResult(id)          { return tx(STORE_RESULTS, 'readwrite', os => os.delete(id)); }
   function clearResults()            { return tx(STORE_RESULTS, 'readwrite', os => os.clear()); }
 
+  /* ── presets（OCR/罫線除去設定のプリセット） ────────── */
+  function putPreset(p) {
+    if (!p.createdAt) p.createdAt = Date.now();
+    return tx(STORE_PRESETS, 'readwrite', os => os.put(p)).then(() => p);
+  }
+  function getAllPresets() { return getAllFromStore(STORE_PRESETS, 'createdAt', 'prev'); }
+  function deletePreset(id) { return tx(STORE_PRESETS, 'readwrite', os => os.delete(id)); }
+
   /* ── Public API ─────────────────────────────────────── */
   return {
     open,
     putForm, getForm, getAllForms, deleteForm, clearForms,
     putResult, getAllResults, deleteResult, clearResults,
+    putPreset, getAllPresets, deletePreset,
   };
 
 })();

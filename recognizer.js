@@ -56,7 +56,12 @@ const Recognizer = (() => {
    *   angle, translation, resultCanvas, previewMats, fields:Array, error
    * }>}
    */
-  async function runOcr(sourceCanvas, form, matchInfo, opts = {}, cb = {}) {
+  /**
+   * 傾き補正 → 原点再ローカライズ → 罫線除去 までを実行（OCR は行わない）。
+   * PSM 比較など「同じ前処理結果に対して複数回 OCR したい」用途で再利用する。
+   * @returns {Promise<{ angle, translation, resultCanvas, previewMats, error }>}
+   */
+  async function prepare(sourceCanvas, form, matchInfo, cb = {}) {
     const stage = (name, pct) => cb.onStage && cb.onStage(name, pct);
 
     /* ③ 傾き補正 */
@@ -85,7 +90,7 @@ const Recognizer = (() => {
     const proc   = LineRemovalProcessor.process(rotated, params);
     if (proc.error) {
       LineRemovalProcessor.cleanupMats(proc.mats);
-      return { angle, translation, resultCanvas: null, previewMats: [], fields: [], error: proc.error };
+      return { angle, translation, resultCanvas: null, previewMats: [], error: proc.error };
     }
     /* mats[3] = 罫線除去結果。OCR 入力用に独立キャンバスへ描画 */
     const resultCanvas = document.createElement('canvas');
@@ -93,6 +98,18 @@ const Recognizer = (() => {
     resultCanvas.width  = resMat.cols;
     resultCanvas.height = resMat.rows;
     LineRemovalProcessor.renderToCanvas(resMat, resultCanvas);
+
+    return { angle, translation, resultCanvas, previewMats: proc.mats, error: null };
+  }
+
+  async function runOcr(sourceCanvas, form, matchInfo, opts = {}, cb = {}) {
+    const stage = (name, pct) => cb.onStage && cb.onStage(name, pct);
+
+    const prep = await prepare(sourceCanvas, form, matchInfo, cb);
+    if (prep.error) {
+      return { angle: prep.angle, translation: prep.translation, resultCanvas: null, previewMats: [], fields: [], error: prep.error };
+    }
+    const { angle, translation, resultCanvas } = prep;
 
     /* ⑥ OCR領域ごとに認識 */
     const regions = form.ocrRegions || [];
@@ -123,9 +140,34 @@ const Recognizer = (() => {
     }
 
     stage('完了', 1);
-    return { angle, translation, resultCanvas, previewMats: proc.mats, fields, error: null };
+    return { angle, translation, resultCanvas, previewMats: prep.previewMats, fields, error: null };
   }
 
-  return { classify, runOcr, dataURLtoImg };
+  /**
+   * 1 領域に対して複数 PSM で OCR を試し、結果を比較する。
+   * @param {HTMLCanvasElement} resultCanvas  prepare() で得た罫線除去後キャンバス
+   * @param {{x,y}} translation
+   * @param {object} region    { name, x, y, w, h }
+   * @param {number[]} psmList
+   * @param {string} lang
+   * @param {Function} onProg  (idx, total, psm) => void
+   * @returns {Promise<Array<{ psm, text, confidence, error }>>}
+   */
+  async function comparePsm(resultCanvas, translation, region, psmList, lang, onProg) {
+    const crop = LineRemovalProcessor.extractRegion(resultCanvas, translation, region);
+    const out = [];
+    for (let i = 0; i < psmList.length; i++) {
+      const psm = psmList[i];
+      if (onProg) onProg(i, psmList.length, psm);
+      if (!crop) { out.push({ psm, text: '', confidence: 0, error: '領域切り出し失敗' }); continue; }
+      const res = await OcrProcessor.recognize(crop, psm, () => {}, lang);
+      const conf = (!res.error && res.words.length)
+        ? Math.round(res.words.reduce((s, w) => s + w.confidence, 0) / res.words.length) : 0;
+      out.push({ psm, text: (res.fullText || '').trim(), confidence: conf, error: res.error || null });
+    }
+    return out;
+  }
+
+  return { classify, prepare, runOcr, comparePsm, dataURLtoImg };
 
 })();

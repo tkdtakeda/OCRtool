@@ -26,7 +26,12 @@
     /* 認識 */
     recogCanvas: null, lastClassify: null,
     recogFormId: null, recogMatchInfo: null, recogResult: null, rrZoom: 1,
+    dbgLoadedFormId: null,
   };
+
+  /* PSM 比較用パターン */
+  const PSM_LIST = [3, 4, 6, 7, 8, 10, 11, 13];
+  const PSM_DESC = { 3: '自動', 4: '縦列(複数行)', 6: '単一ブロック', 7: '単一行', 8: '単一単語', 10: '単一文字', 11: '疎なテキスト', 13: '生の1行' };
 
   const uid = () => Math.random().toString(36).slice(2, 11);
   const dataURLtoImg = url => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('load fail')); i.src = url; });
@@ -341,7 +346,7 @@
 
   function loadRecogImage(canvas) {
     S.recogCanvas = canvas; S.lastClassify = null;
-    S.recogFormId = null; S.recogMatchInfo = null; S.recogResult = null;
+    S.recogFormId = null; S.recogMatchInfo = null; S.recogResult = null; S.dbgLoadedFormId = null;
     $('recogPreview').src = canvas.toDataURL('image/png'); $('recogPreview').style.display = 'block'; $('recogDropHint').style.display = 'none';
     $('btnRunRecognize').disabled = false;
     $('decisionPanel').classList.add('hidden'); $('recogResultArea').classList.add('hidden'); $('debugPanel').classList.add('hidden');
@@ -373,6 +378,10 @@
       S.lastClassify = { decision, scores };
       UI.setPipeline('decide', ['match']);
       UI.renderDecision(decision, S.forms, {});
+      /* 設定パネルを表示し、候補帳票の設定を反映（数値調整・再実行の起点） */
+      const candId = (decision.best && decision.best.formId) || (decision.ranking[0] && decision.ranking[0].formId);
+      if (candId) { const f = S.forms.find(x => x.id === candId); if (f) { applyDbgToUI(f); S.dbgLoadedFormId = candId; } }
+      $('debugPanel').classList.remove('hidden');
       /* 採用なら自動で OCR まで進める（要確認/不一致は手動確認） */
       if (decision.decision === 'accepted' && decision.best) {
         await applyForm(decision.best.formId);
@@ -393,15 +402,16 @@
     return best;
   }
 
-  /* 帳票を適用 → デバッグ設定パネルに反映 → 初回実行 */
+  /* 帳票を適用 → 設定パネルの値で実行（調整済みの値は保持） */
   async function applyForm(formId) {
     if (!S.lastClassify) return UI.toast('先に「認識を実行」してください', 'warning');
     const form = S.forms.find(f => f.id === formId); if (!form) return;
+    /* 別の帳票に切り替えたときのみ、その帳票の登録設定を読み込む */
+    if (S.dbgLoadedFormId !== formId) { applyDbgToUI(form); S.dbgLoadedFormId = formId; }
     S.recogFormId = formId;
     S.recogMatchInfo = bestAnchorFor(form, S.lastClassify.scores);
-    applyDbgToUI(form);                       // 登録設定をデバッグパネルへ反映
     $('debugPanel').classList.remove('hidden');
-    await doRecognitionRun(effectiveForm());  // 初回は登録設定（=反映直後の値）で実行
+    await doRecognitionRun(effectiveForm());
   }
 
   /* デバッグパネルの現在値で再実行 */
@@ -496,6 +506,95 @@
     form.ocrSettings = { psm: parseInt($('dbgPsm').value, 10), lang: $('dbgLang').value };
     try { await FormDB.putForm(form); await loadForms(); UI.toast(`「${form.name}」に設定を保存しました`, 'success'); }
     catch (e) { UI.toast('保存に失敗しました: ' + e.message, 'error'); }
+  }
+
+  /* ── プリセット（OCR/罫線除去設定の保存・呼び出し） ── */
+  async function loadPresets() {
+    let presets = [];
+    try { presets = await FormDB.getAllPresets(); } catch (_) {}
+    S.presets = presets;
+    const sel = $('presetSelect'); const cur = sel.value;
+    sel.innerHTML = '<option value="">（プリセットを選択）</option>';
+    presets.forEach(p => { const o = document.createElement('option'); o.value = p.id; o.textContent = p.name; sel.appendChild(o); });
+    if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+  }
+  function currentDbgPreset() {
+    return { ocrSettings: { psm: parseInt($('dbgPsm').value, 10), lang: $('dbgLang').value }, lineRemoval: collectDbgLineRemoval() };
+  }
+  async function savePreset() {
+    const name = prompt('プリセット名を入力', `設定 ${new Date().toLocaleString('ja-JP')}`);
+    if (name === null) return;
+    const preset = { id: uid(), name: (name || '無題').trim(), ...currentDbgPreset(), createdAt: Date.now() };
+    try { await FormDB.putPreset(preset); await loadPresets(); $('presetSelect').value = preset.id; UI.toast(`プリセット「${preset.name}」を保存しました`, 'success'); }
+    catch (e) { UI.toast('保存に失敗しました: ' + e.message, 'error'); }
+  }
+  function applyPreset() {
+    const id = $('presetSelect').value; if (!id) return UI.toast('プリセットを選択してください', 'warning');
+    const p = (S.presets || []).find(x => x.id === id); if (!p) return;
+    applyDbgToUI({ lineRemoval: p.lineRemoval, ocrSettings: p.ocrSettings });
+    UI.toast(`プリセット「${p.name}」を反映しました。「再実行」で試せます`, 'info', 3500);
+  }
+  async function deletePreset() {
+    const id = $('presetSelect').value; if (!id) return UI.toast('プリセットを選択してください', 'warning');
+    const p = (S.presets || []).find(x => x.id === id);
+    if (!confirm(`プリセット「${p ? p.name : ''}」を削除しますか？`)) return;
+    try { await FormDB.deletePreset(id); await loadPresets(); UI.toast('プリセットを削除しました', 'info'); }
+    catch (e) { UI.toast('削除に失敗しました: ' + e.message, 'error'); }
+  }
+
+  /* ── PSM 全パターン比較 ─────────────────────────────── */
+  function openPsmModal() {
+    if (!S.recogMatchInfo || !S.recogFormId) return UI.toast('先に帳票を適用（OCR実行）してください', 'warning');
+    const form = S.forms.find(f => f.id === S.recogFormId); if (!form) return;
+    const sel = $('psmRegionSelect'); sel.innerHTML = '';
+    (form.ocrRegions || []).forEach(r => { const o = document.createElement('option'); o.value = r.id; o.textContent = r.name; sel.appendChild(o); });
+    $('psmResults').innerHTML = ''; $('psmCrop').classList.add('hidden');
+    $('psmModal').classList.remove('hidden');
+  }
+  async function runPsmCompare() {
+    if (!S.recogMatchInfo) return;
+    const form = effectiveForm(); if (!form) return;
+    const region = (form.ocrRegions || []).find(r => r.id === $('psmRegionSelect').value) || (form.ocrRegions || [])[0];
+    if (!region) return UI.toast('OCR領域がありません', 'warning');
+    $('btnPsmRun').disabled = true;
+    $('psmProgress').classList.remove('hidden'); $('psmResults').innerHTML = '';
+    const setProg = (msg, pct) => { $('psmProgressFill').style.width = `${Math.round(pct * 100)}%`; $('psmProgressMsg').textContent = msg; };
+    setProg('罫線除去中…', 0.05);
+    try {
+      const prep = await Recognizer.prepare(S.recogCanvas, form, S.recogMatchInfo);
+      if (prep.error) { $('psmProgress').classList.add('hidden'); $('btnPsmRun').disabled = false; return UI.toast('前処理エラー: ' + prep.error, 'error'); }
+      const crop = LineRemovalProcessor.extractRegion(prep.resultCanvas, prep.translation, region);
+      if (crop) { $('psmCropImg').src = crop.toDataURL('image/png'); $('psmCrop').classList.remove('hidden'); }
+      const lang = form.ocrSettings.lang || 'eng';
+      const results = await Recognizer.comparePsm(prep.resultCanvas, prep.translation, region, PSM_LIST, lang,
+        (i, total, psm) => setProg(`PSM ${psm} を認識中… (${i + 1}/${total})`, (i + 1) / total));
+      LineRemovalProcessor.cleanupMats(prep.previewMats);
+      $('psmProgress').classList.add('hidden');
+      renderPsmResults(results);
+    } catch (e) { $('psmProgress').classList.add('hidden'); UI.toast('PSM比較エラー: ' + e.message, 'error', 5000); }
+    finally { $('btnPsmRun').disabled = false; }
+  }
+  function renderPsmResults(results) {
+    const c = $('psmResults'); c.innerHTML = '';
+    const maxConf = Math.max(0, ...results.map(r => r.confidence || 0));
+    results.forEach(r => {
+      const cls = r.confidence >= 85 ? 'hi' : r.confidence >= 60 ? 'mid' : 'lo';
+      const isBest = r.confidence > 0 && r.confidence === maxConf;
+      const row = document.createElement('div'); row.className = 'psm-row' + (isBest ? ' is-best' : '');
+      const txt = r.error ? `[エラー: ${r.error}]` : (r.text || '（空）');
+      row.innerHTML = `
+        <span class="psm-tag">PSM ${r.psm}<small>${PSM_DESC[r.psm] || ''}</small></span>
+        <span class="psm-text ${r.text ? '' : 'empty'}"></span>
+        <span class="psm-conf ${cls}">${r.confidence}%</span>
+        <button class="btn btn-ghost btn-sm" data-psm="${r.psm}">採用</button>`;
+      row.querySelector('.psm-text').textContent = txt;
+      row.querySelector('button').addEventListener('click', () => {
+        $('dbgPsm').value = String(r.psm);
+        $('psmModal').classList.add('hidden');
+        UI.toast(`PSM ${r.psm} を採用しました。「再実行」で反映されます`, 'success', 3500);
+      });
+      c.appendChild(row);
+    });
   }
 
   /* 罫線除去結果プレビューの描画（ズーム反映） */
@@ -663,6 +762,18 @@
     $('btnRrZoomOut').addEventListener('click', () => { S.rrZoom = Math.max(0.2, S.rrZoom / 1.3); renderResultPreview(); });
     $('btnRrZoomFit').addEventListener('click', () => { S.rrZoom = 1; renderResultPreview(); });
 
+    /* プリセット */
+    $('btnApplyPreset').addEventListener('click', applyPreset);
+    $('btnSavePreset').addEventListener('click', savePreset);
+    $('btnDeletePreset').addEventListener('click', deletePreset);
+    /* 帳票切替で設定パネルにその帳票の登録値を読み込む */
+    $('dpFormSelect').addEventListener('change', () => { const f = S.forms.find(x => x.id === $('dpFormSelect').value); if (f) { applyDbgToUI(f); S.dbgLoadedFormId = f.id; } });
+    /* PSM 全パターン比較 */
+    $('btnPsmCompare').addEventListener('click', openPsmModal);
+    $('btnPsmRun').addEventListener('click', runPsmCompare);
+    $('closePsmModal').addEventListener('click', () => $('psmModal').classList.add('hidden'));
+    $('psmModal').addEventListener('click', e => { if (e.target === $('psmModal')) $('psmModal').classList.add('hidden'); });
+
     /* サンプル/ヘルプモーダル */
     $('closeSampleFormModal').addEventListener('click', () => $('sampleFormModal').classList.add('hidden'));
     $('sampleFormModal').addEventListener('click', e => { if (e.target === $('sampleFormModal')) $('sampleFormModal').classList.add('hidden'); });
@@ -682,6 +793,7 @@
     }
     loadForms();
     refreshHistory();
+    loadPresets();
   }
 
   document.addEventListener('DOMContentLoaded', init);
