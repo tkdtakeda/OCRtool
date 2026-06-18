@@ -151,7 +151,8 @@
               </div>
               <div class="prow"><label class="plabel">文字ホワイトリスト</label><input type="text" id="regWhitelist" class="pinput" placeholder="空=制限なし 例:0123456789" autocomplete="off"></div>
               <div class="prow"><label class="plabel">正規化 ①→1 / 全角→半角</label><label class="ptoggle"><input type="checkbox" id="regNormalize" checked><span class="ptoggle-track"></span></label></div>
-              <p class="hint-text">日本語ラベルを含む領域は「日本語＋英語」を推奨。番号など数字欄はホワイトリストで字種を限定すると誤認を防げます。</p>
+              <div class="prow"><label class="plabel">漢数字→数字 (一→1)</label><label class="ptoggle"><input type="checkbox" id="regNormalizeKanji"><span class="ptoggle-track"></span></label></div>
+              <p class="hint-text">日本語ラベルを含む領域は「日本語＋英語」を推奨。番号など数字欄はホワイトリストで字種を限定し、必要なら「漢数字→数字」もONに（氏名欄では注意）。</p>
             </div>
           </div>
 
@@ -315,6 +316,7 @@
               <button type="button" class="btn btn-ghost btn-sm" data-wl="">クリア</button>
             </div>
             <div class="prow"><label class="plabel">正規化 ①→1/全角→半角</label><label class="ptoggle"><input type="checkbox" id="dbgNormalize" checked><span class="ptoggle-track"></span></label></div>
+            <div class="prow"><label class="plabel">漢数字→数字 (一→1)</label><label class="ptoggle"><input type="checkbox" id="dbgNormalizeKanji"><span class="ptoggle-track"></span></label></div>
           </div>
           <div class="debug-sec">
             <div class="debug-sec-ttl"><i class="fas fa-sliders"></i> 二値化</div>

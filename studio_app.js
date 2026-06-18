@@ -72,7 +72,7 @@
     $('refPreview').style.display = 'none'; $('refDropHint').style.display = 'flex';
     $('rectNameInput').value = '';
     applyLineRemovalToUI(LineRemovalProcessor.defaultParams());
-    $('regPsm').value = '7'; $('regLang').value = 'eng'; $('regWhitelist').value = ''; $('regNormalize').checked = true;
+    $('regPsm').value = '7'; $('regLang').value = 'eng'; $('regWhitelist').value = ''; $('regNormalize').checked = true; $('regNormalizeKanji').checked = false;
     setDrawMode('anchor');
     $('regCanvas').style.display = 'none'; $('regCanvasPlaceholder').style.display = 'flex';
     $('editorEmpty').classList.add('hidden'); $('editorForm').classList.remove('hidden');
@@ -91,7 +91,7 @@
     S.zoom = 1; S.pending = null;
     applyLineRemovalToUI(f.lineRemoval || LineRemovalProcessor.defaultParams());
     $('regPsm').value = String(f.ocrSettings?.psm ?? 7); $('regLang').value = f.ocrSettings?.lang || 'eng';
-    $('regWhitelist').value = f.ocrSettings?.whitelist || ''; $('regNormalize').checked = f.ocrSettings?.normalize !== false;
+    $('regWhitelist').value = f.ocrSettings?.whitelist || ''; $('regNormalize').checked = f.ocrSettings?.normalize !== false; $('regNormalizeKanji').checked = !!f.ocrSettings?.normalizeKanji;
     $('editorEmpty').classList.add('hidden'); $('editorForm').classList.remove('hidden');
     setDrawMode('anchor');
     UI.renderAnchorList(S.anchors, removeAnchor);
@@ -298,7 +298,7 @@
       referenceImage: { dataURL: S.refDataURL, w: S.refNatW, h: S.refNatH },
       anchors: S.anchors.map(a => ({ ...a })),
       ocrRegions: S.regions.map(r => ({ ...r })),
-      ocrSettings: { psm: parseInt($('regPsm').value, 10), lang: $('regLang').value, whitelist: $('regWhitelist').value, normalize: $('regNormalize').checked },
+      ocrSettings: { psm: parseInt($('regPsm').value, 10), lang: $('regLang').value, whitelist: $('regWhitelist').value, normalize: $('regNormalize').checked, normalizeKanji: $('regNormalizeKanji').checked },
       lineRemoval: collectLineRemoval(),
       isSample: S.isSampleForm,
     };
@@ -470,7 +470,7 @@
     return { ...form, lineRemoval: collectDbgLineRemoval(), ocrSettings: collectDbgOcr() };
   }
   function collectDbgOcr() {
-    return { psm: parseInt($('dbgPsm').value, 10), lang: $('dbgLang').value, whitelist: $('dbgWhitelist').value, normalize: $('dbgNormalize').checked };
+    return { psm: parseInt($('dbgPsm').value, 10), lang: $('dbgLang').value, whitelist: $('dbgWhitelist').value, normalize: $('dbgNormalize').checked, normalizeKanji: $('dbgNormalizeKanji').checked };
   }
 
   /* デバッグパネル: 値の収集 / UI 反映 / 二値化行トグル */
@@ -490,6 +490,7 @@
     const txt = (id, val) => { const e = $(id); if (e) e.textContent = val; };
     set('dbgLang', form.ocrSettings?.lang || 'eng'); set('dbgPsm', String(form.ocrSettings?.psm ?? 3));
     set('dbgWhitelist', form.ocrSettings?.whitelist || ''); set('dbgNormalize', form.ocrSettings?.normalize !== false);
+    set('dbgNormalizeKanji', !!form.ocrSettings?.normalizeKanji);
     set('dbgBinaryMethod', p.binaryMethod);
     set('dbgManualThresh', p.manualThresh); txt('dbgValThresh', p.manualThresh);
     set('dbgAdaptiveBlock', p.adaptiveBlock); txt('dbgValBlock', p.adaptiveBlock);
@@ -578,7 +579,7 @@
       const crop = LineRemovalProcessor.extractRegion(prep.resultCanvas, prep.translation, region);
       if (crop) { $('psmCropImg').src = crop.toDataURL('image/png'); $('psmCrop').classList.remove('hidden'); }
       const results = await Recognizer.comparePsm(prep.resultCanvas, prep.translation, region, PSM_LIST,
-        { lang: form.ocrSettings.lang || 'eng', whitelist: form.ocrSettings.whitelist || '', normalize: form.ocrSettings.normalize !== false },
+        { lang: form.ocrSettings.lang || 'eng', whitelist: form.ocrSettings.whitelist || '', normalize: form.ocrSettings.normalize !== false, kanji: !!form.ocrSettings.normalizeKanji },
         (i, total, psm) => setProg(`PSM ${psm} を認識中… (${i + 1}/${total})`, (i + 1) / total));
       LineRemovalProcessor.cleanupMats(prep.previewMats);
       $('psmProgress').classList.add('hidden');
