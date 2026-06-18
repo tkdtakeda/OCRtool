@@ -25,6 +25,7 @@
     isDrawing: false, ds: { x: 0, y: 0 }, dc: { x: 0, y: 0 }, pending: null,
     /* 認識 */
     recogCanvas: null, lastClassify: null,
+    recogFormId: null, recogMatchInfo: null, recogResult: null, rrZoom: 1,
   };
 
   const uid = () => Math.random().toString(36).slice(2, 11);
@@ -66,7 +67,7 @@
     $('refPreview').style.display = 'none'; $('refDropHint').style.display = 'flex';
     $('rectNameInput').value = '';
     applyLineRemovalToUI(LineRemovalProcessor.defaultParams());
-    $('regPsm').value = '7';
+    $('regPsm').value = '7'; $('regLang').value = 'eng';
     setDrawMode('anchor');
     $('regCanvas').style.display = 'none'; $('regCanvasPlaceholder').style.display = 'flex';
     $('editorEmpty').classList.add('hidden'); $('editorForm').classList.remove('hidden');
@@ -84,7 +85,7 @@
     S.regions = (f.ocrRegions || []).map(r => ({ ...r }));
     S.zoom = 1; S.pending = null;
     applyLineRemovalToUI(f.lineRemoval || LineRemovalProcessor.defaultParams());
-    $('regPsm').value = String(f.ocrSettings?.psm ?? 7);
+    $('regPsm').value = String(f.ocrSettings?.psm ?? 7); $('regLang').value = f.ocrSettings?.lang || 'eng';
     $('editorEmpty').classList.add('hidden'); $('editorForm').classList.remove('hidden');
     setDrawMode('anchor');
     UI.renderAnchorList(S.anchors, removeAnchor);
@@ -126,7 +127,8 @@
   function setDrawMode(m) {
     S.drawMode = m; S.pending = null;
     document.querySelectorAll('#drawModeSwitch .dm-btn').forEach(b => b.classList.toggle('is-active', b.dataset.dm === m));
-    $('rectNameInput').placeholder = m === 'anchor' ? '識別アンカー名（例：タイトル）' : 'OCRフィールド名（例：番号）';
+    const c = $('regCanvas'); if (c) c.style.cursor = m === 'pan' ? 'grab' : 'crosshair';
+    if (m !== 'pan') $('rectNameInput').placeholder = m === 'anchor' ? '識別アンカー名（例：タイトル）' : 'OCRフィールド名（例：番号）';
     redrawRegCanvas();
   }
 
@@ -160,11 +162,24 @@
   }
 
   function initRegCanvasEvents() {
-    const c = $('regCanvas');
-    c.addEventListener('mousedown', e => { if (!S.refImg) return; S.isDrawing = true; S.ds = { x: e.offsetX, y: e.offsetY }; S.dc = { ...S.ds }; });
-    c.addEventListener('mousemove', e => { if (!S.isDrawing) return; S.dc = { x: e.offsetX, y: e.offsetY }; redrawRegCanvas(); });
-    c.addEventListener('mouseup', e => { if (!S.isDrawing) return; S.dc = { x: e.offsetX, y: e.offsetY }; S.isDrawing = false; finishDraw(); });
+    const c = $('regCanvas'), wrap = $('regCanvasWrap');
+    let panStart = null;
+    const endPan = () => { if (panStart) { panStart = null; wrap.classList.remove('panning'); $('regCanvas').style.cursor = 'grab'; } };
+    c.addEventListener('mousedown', e => {
+      if (!S.refImg) return;
+      if (S.drawMode === 'pan') {   // ドラッグで画像を移動（パン）
+        panStart = { x: e.clientX, y: e.clientY, sl: wrap.scrollLeft, st: wrap.scrollTop };
+        wrap.classList.add('panning'); c.style.cursor = 'grabbing'; e.preventDefault(); return;
+      }
+      S.isDrawing = true; S.ds = { x: e.offsetX, y: e.offsetY }; S.dc = { ...S.ds };
+    });
+    c.addEventListener('mousemove', e => {
+      if (panStart) { wrap.scrollLeft = panStart.sl - (e.clientX - panStart.x); wrap.scrollTop = panStart.st - (e.clientY - panStart.y); return; }
+      if (!S.isDrawing) return; S.dc = { x: e.offsetX, y: e.offsetY }; redrawRegCanvas();
+    });
+    c.addEventListener('mouseup', e => { if (panStart) { endPan(); return; } if (!S.isDrawing) return; S.dc = { x: e.offsetX, y: e.offsetY }; S.isDrawing = false; finishDraw(); });
     c.addEventListener('mouseleave', () => { if (S.isDrawing) { S.isDrawing = false; finishDraw(); } });
+    window.addEventListener('mouseup', endPan);   // キャンバス外で離してもパン終了
   }
   function finishDraw() {
     const sc = activeScale();
@@ -277,7 +292,7 @@
       referenceImage: { dataURL: S.refDataURL, w: S.refNatW, h: S.refNatH },
       anchors: S.anchors.map(a => ({ ...a })),
       ocrRegions: S.regions.map(r => ({ ...r })),
-      ocrSettings: { psm: parseInt($('regPsm').value, 10), lang: 'eng' },
+      ocrSettings: { psm: parseInt($('regPsm').value, 10), lang: $('regLang').value },
       lineRemoval: collectLineRemoval(),
       isSample: S.isSampleForm,
     };
@@ -326,9 +341,10 @@
 
   function loadRecogImage(canvas) {
     S.recogCanvas = canvas; S.lastClassify = null;
+    S.recogFormId = null; S.recogMatchInfo = null; S.recogResult = null;
     $('recogPreview').src = canvas.toDataURL('image/png'); $('recogPreview').style.display = 'block'; $('recogDropHint').style.display = 'none';
     $('btnRunRecognize').disabled = false;
-    $('decisionPanel').classList.add('hidden'); $('recogResultArea').classList.add('hidden');
+    $('decisionPanel').classList.add('hidden'); $('recogResultArea').classList.add('hidden'); $('debugPanel').classList.add('hidden');
     UI.resetPipeline();
   }
 
@@ -377,16 +393,31 @@
     return best;
   }
 
+  /* 帳票を適用 → デバッグ設定パネルに反映 → 初回実行 */
   async function applyForm(formId) {
     if (!S.lastClassify) return UI.toast('先に「認識を実行」してください', 'warning');
     const form = S.forms.find(f => f.id === formId); if (!form) return;
-    const scores = S.lastClassify.scores;
-    const mi = bestAnchorFor(form, scores);
+    S.recogFormId = formId;
+    S.recogMatchInfo = bestAnchorFor(form, S.lastClassify.scores);
+    applyDbgToUI(form);                       // 登録設定をデバッグパネルへ反映
+    $('debugPanel').classList.remove('hidden');
+    await doRecognitionRun(effectiveForm());  // 初回は登録設定（=反映直後の値）で実行
+  }
 
+  /* デバッグパネルの現在値で再実行 */
+  async function rerun() {
+    if (!S.recogFormId) return UI.toast('先に「認識を実行」して帳票を適用してください', 'warning');
+    const eff = effectiveForm(); if (!eff) return;
+    await doRecognitionRun(eff);
+  }
+
+  /* 罫線除去 + OCR の実行本体（effForm は設定上書き済みの帳票） */
+  async function doRecognitionRun(form) {
+    const mi = S.recogMatchInfo;
     $('recogResultArea').classList.remove('hidden');
     UI.showRecogProgress(true); UI.updateRecogProgress('初期化中…', 0);
     $('fieldResults').innerHTML = ''; $('saveStatus').textContent = '';
-
+    $('btnRerun').disabled = true;
     try {
       const result = await Recognizer.runOcr(S.recogCanvas, form, mi, {}, {
         onStage: (name, pct) => {
@@ -401,7 +432,10 @@
 
       UI.setPipeline(null, ['match', 'decide', 'rotate', 'line', 'ocr']);
       UI.showRecogProgress(false);
-      UI.renderRecogPreview(result.resultCanvas, result.translation, form.ocrRegions, result.angle);
+      /* ズーム/パン用に結果を保持して描画 */
+      S.recogResult = { resultCanvas: result.resultCanvas, translation: result.translation, regions: form.ocrRegions, angle: result.angle };
+      S.rrZoom = 1;
+      renderResultPreview();
       UI.renderFieldResults(result.fields);
       LineRemovalProcessor.cleanupMats(result.previewMats);
 
@@ -409,6 +443,67 @@
       const ok = result.fields.filter(f => !f.error).length;
       UI.toast(`OCR完了 — ${ok}/${result.fields.length} フィールド認識`, 'success');
     } catch (e) { UI.showRecogProgress(false); UI.toast('OCRエラー: ' + e.message, 'error', 5000); }
+    finally { $('btnRerun').disabled = false; }
+  }
+
+  /* デバッグパネル設定で上書きした帳票を返す */
+  function effectiveForm() {
+    const form = S.forms.find(f => f.id === S.recogFormId); if (!form) return null;
+    return { ...form, lineRemoval: collectDbgLineRemoval(), ocrSettings: { psm: parseInt($('dbgPsm').value, 10), lang: $('dbgLang').value } };
+  }
+
+  /* デバッグパネル: 値の収集 / UI 反映 / 二値化行トグル */
+  function collectDbgLineRemoval() {
+    const v = id => $(id).value, vi = id => parseInt($(id).value, 10), vc = id => $(id).checked;
+    return {
+      binaryMethod: v('dbgBinaryMethod'), manualThresh: vi('dbgManualThresh'),
+      adaptiveBlock: vi('dbgAdaptiveBlock'), adaptiveC: vi('dbgAdaptiveC'),
+      enableHoriz: vc('dbgEnableHoriz'), horizLen: vi('dbgHorizLen'), horizThick: vi('dbgHorizThick'), horizDilate: vi('dbgHorizDilate'),
+      enableVert: vc('dbgEnableVert'), vertLen: vi('dbgVertLen'), vertThick: vi('dbgVertThick'), vertDilate: vi('dbgVertDilate'),
+      maskDilate: vi('dbgMaskDilate'), outputBase: v('dbgOutputBase'),
+    };
+  }
+  function applyDbgToUI(form) {
+    const p = form.lineRemoval || LineRemovalProcessor.defaultParams();
+    const set = (id, val) => { const e = $(id); if (e) e[e.type === 'checkbox' ? 'checked' : 'value'] = val; };
+    const txt = (id, val) => { const e = $(id); if (e) e.textContent = val; };
+    set('dbgLang', form.ocrSettings?.lang || 'eng'); set('dbgPsm', String(form.ocrSettings?.psm ?? 3));
+    set('dbgBinaryMethod', p.binaryMethod);
+    set('dbgManualThresh', p.manualThresh); txt('dbgValThresh', p.manualThresh);
+    set('dbgAdaptiveBlock', p.adaptiveBlock); txt('dbgValBlock', p.adaptiveBlock);
+    set('dbgAdaptiveC', p.adaptiveC); txt('dbgValC', p.adaptiveC);
+    set('dbgEnableHoriz', p.enableHoriz);
+    set('dbgHorizLen', p.horizLen); txt('dbgValHLen', p.horizLen);
+    set('dbgHorizThick', p.horizThick); txt('dbgValHThick', p.horizThick);
+    set('dbgHorizDilate', p.horizDilate); txt('dbgValHDil', p.horizDilate);
+    set('dbgEnableVert', p.enableVert);
+    set('dbgVertLen', p.vertLen); txt('dbgValVLen', p.vertLen);
+    set('dbgVertThick', p.vertThick); txt('dbgValVThick', p.vertThick);
+    set('dbgVertDilate', p.vertDilate); txt('dbgValVDil', p.vertDilate);
+    set('dbgMaskDilate', p.maskDilate); txt('dbgValMaskDil', p.maskDilate);
+    set('dbgOutputBase', p.outputBase || 'original');
+    updateDbgBinaryRows();
+  }
+  function updateDbgBinaryRows() {
+    const m = $('dbgBinaryMethod').value;
+    $('dbgRowThresh').classList.toggle('hidden', m !== 'manual');
+    $('dbgRowBlock').classList.toggle('hidden', m !== 'adaptive');
+    $('dbgRowC').classList.toggle('hidden', m !== 'adaptive');
+  }
+  async function saveSettingsToForm() {
+    const form = S.forms.find(f => f.id === S.recogFormId); if (!form) return UI.toast('対象帳票がありません', 'warning');
+    form.lineRemoval = collectDbgLineRemoval();
+    form.ocrSettings = { psm: parseInt($('dbgPsm').value, 10), lang: $('dbgLang').value };
+    try { await FormDB.putForm(form); await loadForms(); UI.toast(`「${form.name}」に設定を保存しました`, 'success'); }
+    catch (e) { UI.toast('保存に失敗しました: ' + e.message, 'error'); }
+  }
+
+  /* 罫線除去結果プレビューの描画（ズーム反映） */
+  function renderResultPreview() {
+    if (!S.recogResult) return;
+    const { resultCanvas, translation, regions, angle } = S.recogResult;
+    const scale = UI.renderRecogPreview(resultCanvas, translation, regions, angle, S.rrZoom);
+    $('rrZoomLabel').textContent = Math.round(scale * 100) + '%';
   }
 
   async function saveResult(form, result) {
@@ -425,6 +520,7 @@
       angle: result.angle,
       overallFieldConfidence: avgConf,
       voting: { margin: dec.margin, legacySignal: dec.legacySignal, ranking: dec.ranking.map(r => ({ formName: r.formName, peak: r.peak, agg: r.agg, support: r.support })) },
+      settings: { ocr: form.ocrSettings, lineRemoval: form.lineRemoval },  // 再現用に使用した設定も保存
       fields: result.fields.map(f => ({ name: f.name, text: f.text, confidence: f.confidence, error: f.error || null })),
     };
     try { await FormDB.putResult(record); $('saveStatus').innerHTML = `<i class="fas fa-circle-check"></i> IndexedDB に保存しました（平均信頼度 ${avgConf}%）`; refreshHistory(); }
@@ -476,6 +572,30 @@
       sl.addEventListener('input', () => { vl.textContent = sl.value; });
     });
   }
+  /* デバッグパネルのスライダー値ラベル + 二値化トグル */
+  function initDbgControls() {
+    [['dbgManualThresh', 'dbgValThresh'], ['dbgAdaptiveBlock', 'dbgValBlock'], ['dbgAdaptiveC', 'dbgValC'],
+     ['dbgHorizLen', 'dbgValHLen'], ['dbgHorizThick', 'dbgValHThick'], ['dbgHorizDilate', 'dbgValHDil'],
+     ['dbgVertLen', 'dbgValVLen'], ['dbgVertThick', 'dbgValVThick'], ['dbgVertDilate', 'dbgValVDil'],
+     ['dbgMaskDilate', 'dbgValMaskDil']].forEach(([s, v]) => {
+      const sl = $(s), vl = $(v); if (!sl || !vl) return;
+      sl.addEventListener('input', () => { vl.textContent = sl.value; });
+    });
+    $('dbgBinaryMethod').addEventListener('change', updateDbgBinaryRows);
+    $('debugToggle').addEventListener('click', () => {
+      const collapsed = $('debugBody').classList.toggle('is-collapsed');
+      $('debugToggle').classList.toggle('is-collapsed', collapsed);
+    });
+    $('btnRerun').addEventListener('click', rerun);
+    $('btnSaveSettingsToForm').addEventListener('click', saveSettingsToForm);
+  }
+  /* 罫線除去結果プレビューのドラッグ・パン */
+  function initRrPan() {
+    const wrap = $('rrCanvasWrap'); let ps = null;
+    wrap.addEventListener('mousedown', e => { ps = { x: e.clientX, y: e.clientY, sl: wrap.scrollLeft, st: wrap.scrollTop }; wrap.classList.add('panning'); e.preventDefault(); });
+    window.addEventListener('mousemove', e => { if (!ps) return; wrap.scrollLeft = ps.sl - (e.clientX - ps.x); wrap.scrollTop = ps.st - (e.clientY - ps.y); });
+    window.addEventListener('mouseup', () => { if (ps) { ps = null; wrap.classList.remove('panning'); } });
+  }
 
   /* ── グローバル paste（モード/モーダルに応じて振り分け） ── */
   function handlePaste(e) {
@@ -496,7 +616,7 @@
 
   /* ── Init ───────────────────────────────────────────── */
   function init() {
-    initAccordions(); initRegSliders(); initRegCanvasEvents();
+    initAccordions(); initRegSliders(); initRegCanvasEvents(); initDbgControls(); initRrPan();
 
     /* モード切替 */
     $('modeRegister').addEventListener('click', () => setMode('register'));
@@ -537,6 +657,11 @@
     $('btnApplyForm').addEventListener('click', () => applyForm($('dpFormSelect').value));
     $('btnCopyAll').addEventListener('click', copyAllFields);
     $('btnClearHistory').addEventListener('click', clearHistory);
+
+    /* 罫線除去結果プレビューのズーム */
+    $('btnRrZoomIn').addEventListener('click', () => { S.rrZoom = Math.min(8, S.rrZoom * 1.3); renderResultPreview(); });
+    $('btnRrZoomOut').addEventListener('click', () => { S.rrZoom = Math.max(0.2, S.rrZoom / 1.3); renderResultPreview(); });
+    $('btnRrZoomFit').addEventListener('click', () => { S.rrZoom = 1; renderResultPreview(); });
 
     /* サンプル/ヘルプモーダル */
     $('closeSampleFormModal').addEventListener('click', () => $('sampleFormModal').classList.add('hidden'));

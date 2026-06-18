@@ -171,12 +171,12 @@ const StudioUI = (() => {
   }
 
   /* ── 認識プレビュー（罫線除去結果 + OCR領域重畳） ───── */
-  function renderRecogPreview(resultCanvas, translation, regions, angle) {
-    const c = $('recogResultCanvas'); if (!c || !resultCanvas) return;
+  function renderRecogPreview(resultCanvas, translation, regions, angle, zoom = 1) {
+    const c = $('recogResultCanvas'); if (!c || !resultCanvas) return 1;
     const wrap = c.parentElement;
-    const maxW = (wrap?.clientWidth || 500) - 20;
-    const maxH = 420;
-    const scale = Math.min(1, maxW / resultCanvas.width, maxH / resultCanvas.height);
+    const maxW = (wrap?.clientWidth || 500) - 24;
+    const fit = Math.min(1, maxW / resultCanvas.width);   // 横幅フィットを 100% の基準とする
+    const scale = Math.max(0.05, fit * zoom);
     c.width = Math.round(resultCanvas.width * scale);
     c.height = Math.round(resultCanvas.height * scale);
     const ctx = c.getContext('2d');
@@ -194,6 +194,7 @@ const StudioUI = (() => {
       ctx.textBaseline = 'alphabetic';
     });
     $('rrAngle').textContent = `傾き補正 ${angle > 0 ? '+' : ''}${angle}°`;
+    return scale;
   }
 
   /* ── OCR フィールド結果 ─────────────────────────────── */

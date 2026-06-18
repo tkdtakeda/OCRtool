@@ -24,17 +24,23 @@ const OcrProcessor = (() => {
 
   let _worker = null;
   let _ready  = false;
+  let _lang   = 'eng';
   let _logCb  = () => {};
 
-  /* ── Worker 初期化（初回のみ実行） ──────────────────── */
-  async function ensureWorker() {
-    if (_ready) return;
-    _worker = await Tesseract.createWorker({
-      ...CDN,
-      logger: m => _logCb(m),
-    });
-    await _worker.loadLanguage('eng');
-    await _worker.initialize('eng');
+  /* ── Worker 初期化（初回 / 言語変更時のみ実行） ─────── */
+  async function ensureWorker(lang) {
+    const want = lang || 'eng';
+    if (_ready && _lang === want) return;
+    if (!_worker) {
+      _worker = await Tesseract.createWorker({
+        ...CDN,
+        logger: m => _logCb(m),
+      });
+    }
+    /* 'eng' / 'jpn' / 'jpn+eng' などをまとめて読み込み・初期化 */
+    await _worker.loadLanguage(want);
+    await _worker.initialize(want);
+    _lang  = want;
     _ready = true;
   }
 
@@ -58,7 +64,7 @@ const OcrProcessor = (() => {
    *   error:    string|null
    * }>}
    */
-  async function recognize(canvas, psm, onProgress) {
+  async function recognize(canvas, psm, onProgress, lang) {
     /* ログコールバックを更新（ensureWorker 呼び出し前に設定） */
     _logCb = m => {
       if (typeof onProgress === 'function') {
@@ -67,7 +73,7 @@ const OcrProcessor = (() => {
     };
 
     try {
-      await ensureWorker();
+      await ensureWorker(lang);
       await _worker.setParameters({ tessedit_pageseg_mode: String(psm) });
 
       const { data } = await _worker.recognize(canvas);

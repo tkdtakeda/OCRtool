@@ -56,6 +56,8 @@
 .editor-body { flex: 1; display: grid; grid-template-columns: 264px 1fr 230px; gap: 0; overflow: hidden; }
 .editor-col { overflow-y: auto; padding: 12px; }
 .editor-col--side { background: var(--c-surface); border-right: 1px solid var(--c-border); display: flex; flex-direction: column; gap: 12px; }
+/* アコーディオンを両方開いても重ならないよう、子要素は縮小させず列をスクロール */
+.editor-col--side > * { flex-shrink: 0; }
 .editor-col--canvas { display: flex; flex-direction: column; padding: 10px; gap: 8px; }
 .editor-col--lists { background: var(--c-surface); border-left: 1px solid var(--c-border); display: flex; flex-direction: column; gap: 12px; }
 
@@ -103,6 +105,7 @@
 .cs-name-input:focus { outline: none; border-color: var(--c-pri); box-shadow: 0 0 0 2px var(--c-pri-lt); }
 
 .reg-canvas-wrap { flex: 1; min-height: 240px; overflow: auto; background: repeating-conic-gradient(#dde5ef 0% 25%, transparent 0% 50%) 0 0 / 14px 14px; border: 1px solid var(--c-border); border-radius: var(--r-sm); display: flex; align-items: flex-start; justify-content: center; padding: 8px; }
+.reg-canvas-wrap.panning { cursor: grabbing; }
 .canvas-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--c-text-3); margin: auto; }
 .canvas-placeholder i { font-size: 2rem; color: var(--c-border-dk); }
 #regCanvas { box-shadow: var(--sh-sm); background: #fff; }
@@ -175,9 +178,23 @@
 .recog-result-area { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .rr-preview, .rr-fields { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r); display: flex; flex-direction: column; overflow: hidden; }
 .rr-hdr { display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; border-bottom: 1px solid var(--c-border); font-size: .8rem; font-weight: 700; color: var(--c-text-2); background: var(--c-surface2); }
-.rr-angle { font-family: 'IBM Plex Mono', monospace; font-size: .72rem; color: var(--c-pri); }
-.rr-canvas-wrap { flex: 1; min-height: 240px; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 10px; background: repeating-conic-gradient(#dde5ef 0% 25%, transparent 0% 50%) 0 0 / 14px 14px; }
-.rr-canvas-wrap canvas { max-width: 100%; box-shadow: var(--sh-sm); background: #fff; }
+.rr-angle { font-family: 'IBM Plex Mono', monospace; font-size: .72rem; color: var(--c-pri); margin-left: auto; }
+.rr-zoom { display: flex; align-items: center; gap: 4px; margin-left: 8px; }
+.rr-canvas-wrap { flex: 1; min-height: 240px; max-height: 520px; overflow: auto; padding: 10px; background: repeating-conic-gradient(#dde5ef 0% 25%, transparent 0% 50%) 0 0 / 14px 14px; cursor: grab; }
+.rr-canvas-wrap.panning { cursor: grabbing; }
+.rr-canvas-wrap canvas { display: block; margin: auto; box-shadow: var(--sh-sm); background: #fff; }
+
+/* ── デバッグ設定パネル ─────────────────────────────── */
+.debug-panel { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r); overflow: hidden; }
+.debug-panel .acc-hdr { background: var(--c-ocr2-lt); color: var(--c-ocr2); }
+.debug-panel .acc-hdr:hover { background: #ede9fe; }
+.debug-body { padding: 12px 14px; }
+.debug-body.is-collapsed { display: none; }
+.debug-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 6px 18px; }
+.debug-sec { display: flex; flex-direction: column; gap: 7px; padding: 4px 0; }
+.debug-sec-ttl { font-size: .74rem; font-weight: 700; color: var(--c-text-2); display: flex; align-items: center; gap: 6px; padding-bottom: 4px; border-bottom: 1px dashed var(--c-border); }
+.debug-sec .plabel { min-width: 92px; }
+.debug-acts { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--c-border); flex-wrap: wrap; }
 
 .recog-progress { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
 .field-results { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
