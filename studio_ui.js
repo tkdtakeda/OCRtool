@@ -78,20 +78,26 @@ const StudioUI = (() => {
     });
   }
 
-  function renderRegionList(regions, onRemove) {
+  function renderRegionList(regions, onRemove, onPattern) {
     const c = $('ocrRegionList'); $('ocrCount').textContent = regions.length;
     if (!regions.length) { c.innerHTML = '<div class="mini-empty">未登録（OCR領域モードで描画）</div>'; return; }
     c.innerHTML = '';
     regions.forEach((r, i) => {
       const col = REGION_COLORS[i % REGION_COLORS.length];
-      const item = document.createElement('div'); item.className = 'mini-item';
-      item.innerHTML = `
-        <span class="midx" style="background:${col}">${i + 1}</span>
-        <span class="mname">${esc(r.name)}</span>
-        <span class="mpos">${r.x},${r.y} ${r.w}×${r.h}</span>
-        <button class="btn-icon-sm" title="削除"><i class="fas fa-xmark"></i></button>`;
-      item.querySelector('button').addEventListener('click', () => onRemove(r.id));
-      c.appendChild(item);
+      const block = document.createElement('div'); block.className = 'mini-region';
+      block.innerHTML = `
+        <div class="mini-item">
+          <span class="midx" style="background:${col}">${i + 1}</span>
+          <span class="mname">${esc(r.name)}</span>
+          <span class="mpos">${r.x},${r.y} ${r.w}×${r.h}</span>
+          <button class="btn-icon-sm" title="削除"><i class="fas fa-xmark"></i></button>
+        </div>
+        <input class="mini-pattern" placeholder="抽出パターン(任意) 例: [A-Z]{2}\\d{4}" spellcheck="false">`;
+      block.querySelector('button').addEventListener('click', () => onRemove(r.id));
+      const inp = block.querySelector('.mini-pattern');
+      inp.value = r.pattern || '';
+      inp.addEventListener('change', () => onPattern && onPattern(r.id, inp.value));
+      c.appendChild(block);
     });
   }
 
@@ -171,7 +177,7 @@ const StudioUI = (() => {
   }
 
   /* ── 認識プレビュー（罫線除去結果 + OCR領域重畳） ───── */
-  function renderRecogPreview(resultCanvas, translation, regions, angle, zoom = 1) {
+  function renderRecogPreview(resultCanvas, transform, regions, angle, zoom = 1) {
     const c = $('recogResultCanvas'); if (!c || !resultCanvas) return 1;
     const wrap = c.parentElement;
     const maxW = (wrap?.clientWidth || 500) - 24;
@@ -181,12 +187,14 @@ const StudioUI = (() => {
     c.height = Math.round(resultCanvas.height * scale);
     const ctx = c.getContext('2d');
     ctx.drawImage(resultCanvas, 0, 0, c.width, c.height);
+    const tf = transform || { scale: 1, tx: 0, ty: 0 };
     (regions || []).forEach((r, i) => {
       const col = REGION_COLORS[i % REGION_COLORS.length];
-      const rx = Math.round((translation.x + r.x) * scale);
-      const ry = Math.round((translation.y + r.y) * scale);
-      const rw = Math.max(2, Math.round(r.w * scale));
-      const rh = Math.max(2, Math.round(r.h * scale));
+      /* 相似変換で入力座標へ写像してから表示スケールを掛ける */
+      const rx = Math.round((tf.scale * r.x + tf.tx) * scale);
+      const ry = Math.round((tf.scale * r.y + tf.ty) * scale);
+      const rw = Math.max(2, Math.round(tf.scale * r.w * scale));
+      const rh = Math.max(2, Math.round(tf.scale * r.h * scale));
       ctx.fillStyle = col + '22'; ctx.fillRect(rx, ry, rw, rh);
       ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.strokeRect(rx, ry, rw, rh);
       ctx.fillStyle = col; ctx.font = 'bold 10px sans-serif'; ctx.textBaseline = 'bottom';
@@ -208,10 +216,14 @@ const StudioUI = (() => {
       const row = document.createElement('div');
       row.className = 'field-row'; row.style.animationDelay = `${(i * 0.05).toFixed(2)}s`;
       const txt = f.error ? `[エラー: ${f.error}]` : f.text;
+      /* 抽出パターン適用で生テキストと変わった場合は元の値を併記 */
+      const rawHint = (f.raw !== undefined && f.raw !== f.text)
+        ? `<span class="field-raw" title="抽出パターン適用前">元: ${esc(f.raw || '（空）')}</span>` : '';
       row.innerHTML = `
         <div class="field-row-hdr">
           <span class="field-idx" style="background:${col}">${i + 1}</span>
           <span class="field-name">${esc(f.name)}</span>
+          ${rawHint}
           ${badge}
         </div>
         <textarea class="field-text" readonly>${esc(txt)}</textarea>`;

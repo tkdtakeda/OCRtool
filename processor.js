@@ -332,6 +332,27 @@ const LineRemovalProcessor = (() => {
     return out;
   }
 
+  /* ── 絶対矩形の切り出し ─────────────────────────────── */
+  /**
+   * 入力画像座標の絶対矩形（x,y,w,h）を切り出す。境界はクランプする。
+   * 相似変換でスケール適用済みの矩形を渡す用途（複数アンカー補正）。
+   * @param {HTMLCanvasElement} srcCanvas
+   * @param {{x:number,y:number,w:number,h:number}} rect
+   * @returns {HTMLCanvasElement|null}
+   */
+  function extractRect(srcCanvas, rect) {
+    const x = Math.round(rect.x), y = Math.round(rect.y);
+    const w = Math.max(1, Math.round(rect.w)), h = Math.max(1, Math.round(rect.h));
+    const sx = Math.max(0, x), sy = Math.max(0, y);
+    const cw = Math.min(w - (sx - x), srcCanvas.width  - sx);
+    const ch = Math.min(h - (sy - y), srcCanvas.height - sy);
+    if (cw <= 0 || ch <= 0) return null;
+    const out = document.createElement('canvas');
+    out.width = cw; out.height = ch;
+    out.getContext('2d').drawImage(srcCanvas, sx, sy, cw, ch, 0, 0, cw, ch);
+    return out;
+  }
+
   /* ── Render / cleanup ───────────────────────────────── */
   /**
    * Mat をキャンバスに描画する
@@ -352,6 +373,6 @@ const LineRemovalProcessor = (() => {
     });
   }
 
-  return { process, renderToCanvas, cleanupMats, defaultParams, rotateCanvas, extractRegion };
+  return { process, renderToCanvas, cleanupMats, defaultParams, rotateCanvas, extractRegion, extractRect };
 
 })();

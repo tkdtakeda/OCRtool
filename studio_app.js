@@ -77,7 +77,7 @@
     $('regCanvas').style.display = 'none'; $('regCanvasPlaceholder').style.display = 'flex';
     $('editorEmpty').classList.add('hidden'); $('editorForm').classList.remove('hidden');
     UI.renderAnchorList(S.anchors, removeAnchor);
-    UI.renderRegionList(S.regions, removeRegion);
+    UI.renderRegionList(S.regions, removeRegion, setRegionPattern);
     refreshSteps();
     setTimeout(() => $('formNameInput').focus(), 50);
   }
@@ -95,7 +95,7 @@
     $('editorEmpty').classList.add('hidden'); $('editorForm').classList.remove('hidden');
     setDrawMode('anchor');
     UI.renderAnchorList(S.anchors, removeAnchor);
-    UI.renderRegionList(S.regions, removeRegion);
+    UI.renderRegionList(S.regions, removeRegion, setRegionPattern);
     await setReference(f.referenceImage.dataURL);
     refreshSteps();
   }
@@ -210,14 +210,15 @@
     } else {
       const p = S.pending;
       S.regions.push({ id: uid(), name, x: p.x, y: p.y, w: p.w, h: p.h });
-      UI.renderRegionList(S.regions, removeRegion);
+      UI.renderRegionList(S.regions, removeRegion, setRegionPattern);
     }
     S.pending = null; $('rectNameInput').value = ''; $('btnAddRect').disabled = true;
     redrawRegCanvas(); refreshSteps();
     UI.toast(`「${name}」を追加しました`, 'success', 1600);
   }
   function removeAnchor(id) { S.anchors = S.anchors.filter(a => a.id !== id); UI.renderAnchorList(S.anchors, removeAnchor); redrawRegCanvas(); refreshSteps(); }
-  function removeRegion(id) { S.regions = S.regions.filter(r => r.id !== id); UI.renderRegionList(S.regions, removeRegion); redrawRegCanvas(); refreshSteps(); }
+  function removeRegion(id) { S.regions = S.regions.filter(r => r.id !== id); UI.renderRegionList(S.regions, removeRegion, setRegionPattern); redrawRegCanvas(); refreshSteps(); }
+  function setRegionPattern(id, val) { const r = S.regions.find(x => x.id === id); if (r) r.pattern = (val || '').trim(); }
 
   /* ── 別画像から識別アンカーを自動配置 ───────────────── */
   async function addAnchorFromImage(dataURL) {
@@ -339,7 +340,7 @@
         S.regions = f.ocrRegions.map(r => ({ ...r, id: uid() }));
         $('formNameInput').value = f.name;
         applyLineRemovalToUI(f.lineRemoval); $('regPsm').value = String(f.ocrSettings.psm);
-        UI.renderAnchorList(S.anchors, removeAnchor); UI.renderRegionList(S.regions, removeRegion);
+        UI.renderAnchorList(S.anchors, removeAnchor); UI.renderRegionList(S.regions, removeRegion, setRegionPattern);
         await setReference(f.referenceImage.dataURL);
         UI.toast('サンプルレイアウトを読み込みました。確認して保存してください', 'info', 4000);
       });
@@ -451,7 +452,7 @@
       UI.setPipeline(null, ['match', 'decide', 'rotate', 'line', 'ocr']);
       UI.showRecogProgress(false);
       /* ズーム/パン用に結果を保持して描画 */
-      S.recogResult = { resultCanvas: result.resultCanvas, translation: result.translation, regions: form.ocrRegions, angle: result.angle };
+      S.recogResult = { resultCanvas: result.resultCanvas, transform: result.transform, regions: form.ocrRegions, angle: result.angle };
       S.rrZoom = 1;
       renderResultPreview();
       UI.renderFieldResults(result.fields);
@@ -576,9 +577,9 @@
     try {
       const prep = await Recognizer.prepare(S.recogCanvas, form, S.recogMatchInfo);
       if (prep.error) { $('psmProgress').classList.add('hidden'); $('btnPsmRun').disabled = false; return UI.toast('前処理エラー: ' + prep.error, 'error'); }
-      const crop = LineRemovalProcessor.extractRegion(prep.resultCanvas, prep.translation, region);
+      const crop = LineRemovalProcessor.extractRect(prep.resultCanvas, Recognizer.mapRect(region, prep.transform));
       if (crop) { $('psmCropImg').src = crop.toDataURL('image/png'); $('psmCrop').classList.remove('hidden'); }
-      const results = await Recognizer.comparePsm(prep.resultCanvas, prep.translation, region, PSM_LIST,
+      const results = await Recognizer.comparePsm(prep.resultCanvas, prep.transform, region, PSM_LIST,
         { lang: form.ocrSettings.lang || 'eng', whitelist: form.ocrSettings.whitelist || '', normalize: form.ocrSettings.normalize !== false, kanji: !!form.ocrSettings.normalizeKanji },
         (i, total, psm) => setProg(`PSM ${psm} を認識中… (${i + 1}/${total})`, (i + 1) / total));
       LineRemovalProcessor.cleanupMats(prep.previewMats);
@@ -613,8 +614,8 @@
   /* 罫線除去結果プレビューの描画（ズーム反映） */
   function renderResultPreview() {
     if (!S.recogResult) return;
-    const { resultCanvas, translation, regions, angle } = S.recogResult;
-    const scale = UI.renderRecogPreview(resultCanvas, translation, regions, angle, S.rrZoom);
+    const { resultCanvas, transform, regions, angle } = S.recogResult;
+    const scale = UI.renderRecogPreview(resultCanvas, transform, regions, angle, S.rrZoom);
     $('rrZoomLabel').textContent = Math.round(scale * 100) + '%';
   }
 

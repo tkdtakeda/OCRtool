@@ -33,6 +33,46 @@ const Recognizer = (() => {
     return list;
   }
 
+  /* ── 幾何: 複数アンカーから相似変換（スケール+平行移動）を最小二乗推定 ── */
+  /**
+   * 対応点 (ref → matched) から、回転なしの相似変換 input = scale*ref + t を推定。
+   * 傾きは別途補正済みのため回転は含めない。点が1組ならスケール1の平行移動。
+   * @param {Array<{refX,refY,inX,inY}>} pairs
+   * @returns {{ scale:number, tx:number, ty:number, n:number }}
+   */
+  function estimateSimilarity(pairs) {
+    const n = pairs.length;
+    if (n === 0) return { scale: 1, tx: 0, ty: 0, n: 0 };
+    if (n === 1) return { scale: 1, tx: pairs[0].inX - pairs[0].refX, ty: pairs[0].inY - pairs[0].refY, n: 1 };
+    let rmx = 0, rmy = 0, imx = 0, imy = 0;
+    pairs.forEach(p => { rmx += p.refX; rmy += p.refY; imx += p.inX; imy += p.inY; });
+    rmx /= n; rmy /= n; imx /= n; imy /= n;
+    let num = 0, den = 0;
+    pairs.forEach(p => {
+      const rx = p.refX - rmx, ry = p.refY - rmy, ix = p.inX - imx, iy = p.inY - imy;
+      num += rx * ix + ry * iy;
+      den += rx * rx + ry * ry;
+    });
+    let scale = den > 1e-6 ? num / den : 1;
+    if (!isFinite(scale) || scale < 0.5 || scale > 2) scale = 1;   // 異常値はスケール1へ
+    return { scale, tx: imx - scale * rmx, ty: imy - scale * rmy, n };
+  }
+
+  /** 基準画像座標の矩形を相似変換で入力画像座標へ写像 */
+  function mapRect(region, tf) {
+    return { x: tf.scale * region.x + tf.tx, y: tf.scale * region.y + tf.ty, w: tf.scale * region.w, h: tf.scale * region.h };
+  }
+
+  /** 抽出パターン（正規表現）を適用。group1があればそれ、無ければ全体。不一致は空。 */
+  function applyPattern(text, pattern) {
+    if (!pattern) return text;
+    try {
+      const m = text.match(new RegExp(pattern));
+      if (!m) return '';
+      return m[1] !== undefined ? m[1] : m[0];
+    } catch (_) { return text; }   // 不正な正規表現はそのまま
+  }
+
   /**
    * マッチング + 自動判定のみを実行（採用前に結果を提示するため分離）。
    * @returns {{ decision, scores: Map, forms }}
@@ -69,19 +109,33 @@ const Recognizer = (() => {
     const angle = matchInfo.angle || 0;
     const rotated = LineRemovalProcessor.rotateCanvas(sourceCanvas, angle);
 
-    /* ④ 原点の再ローカライズ: 採用アンカーを回転後画像に角度固定で再マッチ */
+    /* ④ 原点の再ローカライズ: 全アンカーを角度固定で再マッチ → 相似変換を推定
+       （複数アンカーが取れればスケール=拡大率と位置ずれを同時に補正） */
     stage('原点の確定', 0.25);
-    const anchor = (form.anchors || []).find(a => a.id === matchInfo.anchorId) || (form.anchors || [])[0];
-    let translation = { x: 0, y: 0 };
-    if (anchor) {
-      try {
-        const img = await dataURLtoImg(anchor.dataURL);
-        const m   = MatcherEngine.matchAll(rotated, [{ id: '_loc', imageElement: img }],
-                      { angleRange: 0, angleStep: 1 });
-        const loc = m.get('_loc')?.loc || { x: 0, y: 0 };
-        /* 平行移動量 = 入力上の位置 − 基準画像上の位置 */
-        translation = { x: loc.x - (anchor.refX || 0), y: loc.y - (anchor.refY || 0) };
-      } catch (_) { /* 失敗時は移動量 0 */ }
+    const anchors = form.anchors || [];
+    const pairs = [];
+    try {
+      const tpls = await Promise.all(anchors.map(async a => ({ id: a.id, a, imageElement: await dataURLtoImg(a.dataURL) })));
+      const m = MatcherEngine.matchAll(rotated, tpls.map(t => ({ id: t.id, imageElement: t.imageElement })), { angleRange: 0, angleStep: 1 });
+      tpls.forEach(t => {
+        const r = m.get(t.id); if (!r) return;
+        if (r.score >= 0.4) {   // 信頼できる一致のみ採用
+          pairs.push({
+            refX: (t.a.refX || 0) + t.a.w / 2, refY: (t.a.refY || 0) + t.a.h / 2,   // 基準中心
+            inX:  r.loc.x + t.a.w / 2,         inY:  r.loc.y + t.a.h / 2,            // 入力中心
+            score: r.score,
+          });
+        }
+      });
+    } catch (_) { /* 失敗時は下のフォールバック */ }
+    let transform;
+    if (pairs.length >= 1) {
+      transform = estimateSimilarity(pairs);
+    } else {
+      /* 信頼できる一致なし: 採用アンカー1点の平行移動にフォールバック */
+      const anchor = anchors.find(a => a.id === matchInfo.anchorId) || anchors[0];
+      const loc = matchInfo.loc || { x: anchor ? anchor.refX : 0, y: anchor ? anchor.refY : 0 };
+      transform = { scale: 1, tx: loc.x - (anchor?.refX || 0), ty: loc.y - (anchor?.refY || 0), n: 0 };
     }
 
     /* ⑤ 罫線除去（登録された罫線除去パラメータを引き継ぎ） */
@@ -90,7 +144,7 @@ const Recognizer = (() => {
     const proc   = LineRemovalProcessor.process(rotated, params);
     if (proc.error) {
       LineRemovalProcessor.cleanupMats(proc.mats);
-      return { angle, translation, resultCanvas: null, previewMats: [], error: proc.error };
+      return { angle, transform, resultCanvas: null, previewMats: [], error: proc.error };
     }
     /* mats[3] = 罫線除去結果。OCR 入力用に独立キャンバスへ描画 */
     const resultCanvas = document.createElement('canvas');
@@ -99,7 +153,7 @@ const Recognizer = (() => {
     resultCanvas.height = resMat.rows;
     LineRemovalProcessor.renderToCanvas(resMat, resultCanvas);
 
-    return { angle, translation, resultCanvas, previewMats: proc.mats, error: null };
+    return { angle, transform, resultCanvas, previewMats: proc.mats, error: null };
   }
 
   async function runOcr(sourceCanvas, form, matchInfo, opts = {}, cb = {}) {
@@ -107,9 +161,9 @@ const Recognizer = (() => {
 
     const prep = await prepare(sourceCanvas, form, matchInfo, cb);
     if (prep.error) {
-      return { angle: prep.angle, translation: prep.translation, resultCanvas: null, previewMats: [], fields: [], error: prep.error };
+      return { angle: prep.angle, transform: prep.transform, resultCanvas: null, previewMats: [], fields: [], error: prep.error };
     }
-    const { angle, translation, resultCanvas } = prep;
+    const { angle, transform, resultCanvas } = prep;
 
     /* ⑥ OCR領域ごとに認識 */
     const regions = form.ocrRegions || [];
@@ -122,7 +176,7 @@ const Recognizer = (() => {
     for (let i = 0; i < regions.length; i++) {
       const region = regions[i];
       stage(`OCR ${i + 1}/${regions.length}`, 0.55 + 0.4 * (i / Math.max(1, regions.length)));
-      const cropCanvas = LineRemovalProcessor.extractRegion(resultCanvas, translation, region);
+      const cropCanvas = LineRemovalProcessor.extractRect(resultCanvas, mapRect(region, transform));
       if (!cropCanvas) {
         fields.push({ name: region.name, text: '', confidence: 0, error: '領域の切り出しに失敗しました' });
         continue;
@@ -136,9 +190,12 @@ const Recognizer = (() => {
       let text = (res.fullText || '').trim();
       if (doNorm) text = OcrProcessor.normalize(text);
       if (doKanji) text = OcrProcessor.kanjiToNum(text);
+      const raw = text;
+      if (region.pattern) text = applyPattern(text, region.pattern);   // 期待書式で抽出
       fields.push({
         name: region.name,
         text,
+        raw,
         confidence: conf,
         error: res.error || null,
         cropDataURL: cropCanvas.toDataURL('image/png'),
@@ -146,7 +203,7 @@ const Recognizer = (() => {
     }
 
     stage('完了', 1);
-    return { angle, translation, resultCanvas, previewMats: prep.previewMats, fields, error: null };
+    return { angle, transform, resultCanvas, previewMats: prep.previewMats, fields, error: null };
   }
 
   /**
@@ -159,9 +216,9 @@ const Recognizer = (() => {
    * @param {Function} onProg  (idx, total, psm) => void
    * @returns {Promise<Array<{ psm, text, confidence, error }>>}
    */
-  async function comparePsm(resultCanvas, translation, region, psmList, opts, onProg) {
+  async function comparePsm(resultCanvas, transform, region, psmList, opts, onProg) {
     const { lang = 'eng', whitelist = '', normalize = true, kanji = false } = opts || {};
-    const crop = LineRemovalProcessor.extractRegion(resultCanvas, translation, region);
+    const crop = LineRemovalProcessor.extractRect(resultCanvas, mapRect(region, transform));
     const out = [];
     for (let i = 0; i < psmList.length; i++) {
       const psm = psmList[i];
@@ -173,11 +230,12 @@ const Recognizer = (() => {
       let text = (res.fullText || '').trim();
       if (normalize) text = OcrProcessor.normalize(text);
       if (kanji) text = OcrProcessor.kanjiToNum(text);
+      if (region.pattern) text = applyPattern(text, region.pattern);
       out.push({ psm, text, confidence: conf, error: res.error || null });
     }
     return out;
   }
 
-  return { classify, prepare, runOcr, comparePsm, dataURLtoImg };
+  return { classify, prepare, runOcr, comparePsm, mapRect, dataURLtoImg };
 
 })();
