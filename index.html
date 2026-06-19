@@ -319,6 +319,23 @@
             <div class="prow"><label class="plabel">漢数字→数字 (一→1)</label><label class="ptoggle"><input type="checkbox" id="dbgNormalizeKanji"><span class="ptoggle-track"></span></label></div>
           </div>
           <div class="debug-sec">
+            <div class="debug-sec-ttl"><i class="fas fa-scissors"></i> フィールド抽出（文字数・位置別文字）</div>
+            <div class="prow"><label class="plabel">対象フィールド</label><select id="dbgPatRegion" class="pselect"></select></div>
+            <div class="prow"><label class="plabel">抽出パターン</label><input type="text" id="dbgPattern" class="pinput" placeholder="例 [A-Z]{2}\d{4}" spellcheck="false"></div>
+            <div class="wl-quick" id="dbgPatQuick">
+              <button type="button" class="btn btn-ghost btn-sm" data-tok="[A-Z]">英大</button>
+              <button type="button" class="btn btn-ghost btn-sm" data-tok="\d">数字</button>
+              <button type="button" class="btn btn-ghost btn-sm" data-tok="[A-Z0-9]">英数</button>
+              <button type="button" class="btn btn-ghost btn-sm" data-tok=".">任意</button>
+              <button type="button" class="btn btn-ghost btn-sm" data-tok="{2}">×2</button>
+              <button type="button" class="btn btn-ghost btn-sm" data-tok="{3}">×3</button>
+              <button type="button" class="btn btn-ghost btn-sm" data-tok="{4}">×4</button>
+              <button type="button" class="btn btn-ghost btn-sm" data-tok="{5}">×5</button>
+              <button type="button" class="btn btn-ghost btn-sm" data-tok="CLR">クリア</button>
+            </div>
+            <p class="hint-text">例「英大 ×2 数字 ×4」→ <code>[A-Z]{2}\d{4}</code>。該当部分のみ抽出し、はみ出した文字を無視します。</p>
+          </div>
+          <div class="debug-sec">
             <div class="debug-sec-ttl"><i class="fas fa-sliders"></i> 二値化</div>
             <div class="prow"><label class="plabel">方式</label><select id="dbgBinaryMethod" class="pselect"><option value="otsu">Otsu</option><option value="adaptive">適応的</option><option value="manual">手動</option></select></div>
             <div class="prow" id="dbgRowBlock"><label class="plabel">ブロック <b id="dbgValBlock" class="pval">51</b></label><input type="range" id="dbgAdaptiveBlock" class="pslider" min="3" max="51" step="2" value="51"></div>

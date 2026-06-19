@@ -187,22 +187,23 @@ const StudioUI = (() => {
     c.height = Math.round(resultCanvas.height * scale);
     const ctx = c.getContext('2d');
     ctx.drawImage(resultCanvas, 0, 0, c.width, c.height);
-    const tf = transform || { scale: 1, tx: 0, ty: 0 };
+    const tf = transform || { sx: 1, sy: 1, tx: 0, ty: 0 };
     (regions || []).forEach((r, i) => {
       const col = REGION_COLORS[i % REGION_COLORS.length];
-      /* 相似変換で入力座標へ写像してから表示スケールを掛ける */
-      const rx = Math.round((tf.scale * r.x + tf.tx) * scale);
-      const ry = Math.round((tf.scale * r.y + tf.ty) * scale);
-      const rw = Math.max(2, Math.round(tf.scale * r.w * scale));
-      const rh = Math.max(2, Math.round(tf.scale * r.h * scale));
+      /* 軸独立スケール変換で入力座標へ写像してから表示スケールを掛ける */
+      const rx = Math.round((tf.sx * r.x + tf.tx) * scale);
+      const ry = Math.round((tf.sy * r.y + tf.ty) * scale);
+      const rw = Math.max(2, Math.round(tf.sx * r.w * scale));
+      const rh = Math.max(2, Math.round(tf.sy * r.h * scale));
       ctx.fillStyle = col + '22'; ctx.fillRect(rx, ry, rw, rh);
       ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.strokeRect(rx, ry, rw, rh);
       ctx.fillStyle = col; ctx.font = 'bold 10px sans-serif'; ctx.textBaseline = 'bottom';
       ctx.fillText(`${i + 1}.${r.name}`, rx + 2, Math.max(10, ry - 2));
       ctx.textBaseline = 'alphabetic';
     });
-    const scalePct = Math.round((tf.scale || 1) * 100);
-    $('rrAngle').textContent = `傾き ${angle > 0 ? '+' : ''}${angle}° / 倍率 ${scalePct}% / アンカー${tf.n || 0}点`;
+    const sxPct = Math.round((tf.sx || 1) * 100), syPct = Math.round((tf.sy || 1) * 100);
+    const sizeTxt = (sxPct === syPct) ? `${sxPct}%` : `${sxPct}%×${syPct}%`;
+    $('rrAngle').textContent = `傾き ${angle > 0 ? '+' : ''}${angle}° / 倍率 ${sizeTxt} / アンカー${tf.n || 0}点`;
     return scale;
   }
 

@@ -33,38 +33,38 @@ const Recognizer = (() => {
     return list;
   }
 
-  /* ── 幾何: 複数アンカーから相似変換（スケール+平行移動）を最小二乗推定 ── */
+  /* ── 幾何: 複数アンカーから軸ごとの拡大率＋平行移動を推定 ── */
   /**
-   * 対応点 (ref → matched) から、回転なしの相似変換 input = scale*ref + t を推定。
-   * 傾きは別途補正済みのため回転は含めない。点が1組ならスケール1の平行移動。
-   * @param {Array<{refX,refY,inX,inY}>} pairs
-   * @returns {{ scale:number, tx:number, ty:number, n:number }}
+   * 対応点 (ref → matched) から、回転なし・軸独立スケールの変換
+   *   inX = sx*refX + tx,  inY = sy*refY + ty
+   * を推定する（縦横比が違うスニップに対応）。傾きは別途補正済み。
+   * 点が1組なら検出スケール f を sx=sy に採用（1点では縦横比を決められない）。
+   * @param {Array<{refX,refY,inX,inY,scale}>} pairs
+   * @returns {{ sx:number, sy:number, tx:number, ty:number, n:number }}
    */
-  function estimateSimilarity(pairs) {
+  function estimateTransform(pairs) {
     const n = pairs.length;
-    if (n === 0) return { scale: 1, tx: 0, ty: 0, n: 0 };
+    if (n === 0) return { sx: 1, sy: 1, tx: 0, ty: 0, n: 0 };
     if (n === 1) {
-      /* 1点は位置から拡大率を決められないため、検出スケール(f_a)を採用 */
       const f = pairs[0].scale || 1;
-      return { scale: f, tx: pairs[0].inX - f * pairs[0].refX, ty: pairs[0].inY - f * pairs[0].refY, n: 1 };
+      return { sx: f, sy: f, tx: pairs[0].inX - f * pairs[0].refX, ty: pairs[0].inY - f * pairs[0].refY, n: 1 };
     }
-    let rmx = 0, rmy = 0, imx = 0, imy = 0;
-    pairs.forEach(p => { rmx += p.refX; rmy += p.refY; imx += p.inX; imy += p.inY; });
-    rmx /= n; rmy /= n; imx /= n; imy /= n;
-    let num = 0, den = 0;
-    pairs.forEach(p => {
-      const rx = p.refX - rmx, ry = p.refY - rmy, ix = p.inX - imx, iy = p.inY - imy;
-      num += rx * ix + ry * iy;
-      den += rx * rx + ry * ry;
-    });
-    let scale = den > 1e-6 ? num / den : 1;
-    if (!isFinite(scale) || scale < 0.5 || scale > 2) scale = 1;   // 異常値はスケール1へ
-    return { scale, tx: imx - scale * rmx, ty: imy - scale * rmy, n };
+    /* x軸・y軸を独立に最小二乗回帰 */
+    const lin = (gr, gi) => {
+      let mr = 0, mi = 0; pairs.forEach(p => { mr += gr(p); mi += gi(p); }); mr /= n; mi /= n;
+      let num = 0, den = 0; pairs.forEach(p => { const dr = gr(p) - mr, di = gi(p) - mi; num += dr * di; den += dr * dr; });
+      let s = den > 1e-6 ? num / den : 1;
+      if (!isFinite(s) || s < 0.5 || s > 2) s = 1;   // 異常値・分母過小はスケール1へ
+      return { s, t: mi - s * mr };
+    };
+    const X = lin(p => p.refX, p => p.inX);
+    const Y = lin(p => p.refY, p => p.inY);
+    return { sx: X.s, sy: Y.s, tx: X.t, ty: Y.t, n };
   }
 
-  /** 基準画像座標の矩形を相似変換で入力画像座標へ写像 */
+  /** 基準画像座標の矩形を軸独立スケール変換で入力画像座標へ写像 */
   function mapRect(region, tf) {
-    return { x: tf.scale * region.x + tf.tx, y: tf.scale * region.y + tf.ty, w: tf.scale * region.w, h: tf.scale * region.h };
+    return { x: tf.sx * region.x + tf.tx, y: tf.sy * region.y + tf.ty, w: tf.sx * region.w, h: tf.sy * region.h };
   }
 
   /** 抽出パターン（正規表現）を適用。group1があればそれ、無ければ全体。不一致は空。 */
@@ -144,9 +144,9 @@ const Recognizer = (() => {
     /* 信頼できる一致(>=0.4)で相似変換を推定。無ければ最良1点で best-effort */
     const good = allMatches.filter(p => p.score >= 0.4);
     let transform;
-    if (good.length >= 1)        transform = estimateSimilarity(good);
-    else if (allMatches.length)  transform = estimateSimilarity([allMatches[0]]);
-    else                         transform = { scale: 1, tx: 0, ty: 0, n: 0 };
+    if (good.length >= 1)        transform = estimateTransform(good);
+    else if (allMatches.length)  transform = estimateTransform([allMatches[0]]);
+    else                         transform = { sx: 1, sy: 1, tx: 0, ty: 0, n: 0 };
 
     /* ⑤ 罫線除去（登録された罫線除去パラメータを引き継ぎ） */
     stage('罫線除去', 0.45);
