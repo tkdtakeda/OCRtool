@@ -44,6 +44,20 @@ const MatcherEngine = (() => {
   }
 
   /**
+   * グレースケール Mat を指定倍率で拡大縮小する（スケール探索用）。
+   * @param {cv.Mat} src     CV_8UC1
+   * @param {number} factor  倍率（<1 で縮小）
+   * @returns {cv.Mat}       新規 Mat（呼び出し元が delete すること）
+   */
+  function resizeMat(src, factor) {
+    const w = Math.max(1, Math.round(src.cols * factor));
+    const h = Math.max(1, Math.round(src.rows * factor));
+    const dst = new cv.Mat();
+    cv.resize(src, dst, new cv.Size(w, h), 0, 0, factor < 1 ? cv.INTER_AREA : cv.INTER_LINEAR);
+    return dst;
+  }
+
+  /**
    * 単一テンプレートを入力画像に対して matchTemplate (TM_CCOEFF_NORMED)
    * テンプレートが入力画像より大きい場合はスコア 0 を返す。
    * @param {cv.Mat} fullGray      CV_8UC1
@@ -84,10 +98,13 @@ const MatcherEngine = (() => {
   function matchAll(fullCanvas, templates, opts = {}) {
     const angleRange = opts.angleRange ?? 2;
     const angleStep  = Math.max(0.1, opts.angleStep ?? 1);
+    /* スケール探索係数（f = 入力に写る帳票の倍率 / 基準）。既定は等倍のみ */
+    const scaleFactors = (Array.isArray(opts.scaleFactors) && opts.scaleFactors.length)
+      ? opts.scaleFactors : [1];
 
     /* 結果マップ初期化 */
     const results = new Map();
-    templates.forEach(t => results.set(t.id, { score: -Infinity, angle: 0, loc: { x: 0, y: 0 } }));
+    templates.forEach(t => results.set(t.id, { score: -Infinity, angle: 0, scale: 1, loc: { x: 0, y: 0 } }));
 
     /* テンプレートをグレースケール Mat に変換（事前に 1 回のみ） */
     const tplMats = templates.map(t => {
@@ -117,15 +134,21 @@ const MatcherEngine = (() => {
       }
     }
 
-    /* 角度ごとに 1 回回転 → 全テンプレートに照合 */
+    /* 角度 × スケール ごとに入力を変換 → 全テンプレートに照合 */
     angles.forEach(angle => {
       const rotated = rotateMat(fullGray, angle);
-      tplMats.forEach(tm => {
-        const r   = runMatch(rotated, tm.mat);
-        const cur = results.get(tm.id);
-        if (r.score > cur.score) {
-          results.set(tm.id, { score: r.score, angle, loc: r.loc });
-        }
+      scaleFactors.forEach(f => {
+        /* 入力を 1/f に縮小すると、f 倍で写った帳票が基準寸法のテンプレートと一致 */
+        const scaled = (Math.abs(f - 1) < 1e-6) ? rotated : resizeMat(rotated, 1 / f);
+        tplMats.forEach(tm => {
+          const r   = runMatch(scaled, tm.mat);
+          const cur = results.get(tm.id);
+          if (r.score > cur.score) {
+            /* 縮小画像上の loc を元の入力座標へ戻す（× f） */
+            results.set(tm.id, { score: r.score, angle, scale: f, loc: { x: Math.round(r.loc.x * f), y: Math.round(r.loc.y * f) } });
+          }
+        });
+        if (scaled !== rotated) scaled.delete();
       });
       rotated.delete();
     });

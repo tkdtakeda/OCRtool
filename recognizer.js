@@ -43,7 +43,11 @@ const Recognizer = (() => {
   function estimateSimilarity(pairs) {
     const n = pairs.length;
     if (n === 0) return { scale: 1, tx: 0, ty: 0, n: 0 };
-    if (n === 1) return { scale: 1, tx: pairs[0].inX - pairs[0].refX, ty: pairs[0].inY - pairs[0].refY, n: 1 };
+    if (n === 1) {
+      /* 1点は位置から拡大率を決められないため、検出スケール(f_a)を採用 */
+      const f = pairs[0].scale || 1;
+      return { scale: f, tx: pairs[0].inX - f * pairs[0].refX, ty: pairs[0].inY - f * pairs[0].refY, n: 1 };
+    }
     let rmx = 0, rmy = 0, imx = 0, imy = 0;
     pairs.forEach(p => { rmx += p.refX; rmy += p.refY; imx += p.inX; imy += p.inY; });
     rmx /= n; rmy /= n; imx /= n; imy /= n;
@@ -77,11 +81,18 @@ const Recognizer = (() => {
    * マッチング + 自動判定のみを実行（採用前に結果を提示するため分離）。
    * @returns {{ decision, scores: Map, forms }}
    */
+  /* 帳票判定用のスケール探索（切り取り倍率の違いに対応）。粗めで高速に
+     （判定は帳票の選択が目的。精密な倍率は prepare 側で細かく探索する） */
+  const CLASSIFY_SCALES = [0.85, 1.0, 1.15];
+  /* 原点ローカライズ用（精密）。細かめに探索して位置精度を上げる */
+  const LOCALIZE_SCALES = [0.8, 0.87, 0.93, 1.0, 1.07, 1.14, 1.22];
+
   async function classify(sourceCanvas, forms, opts = {}) {
     const angleRange = opts.angleRange ?? 2;
     const angleStep  = opts.angleStep  ?? 1;
+    const scaleFactors = opts.scaleFactors || CLASSIFY_SCALES;
     const tpls   = await buildAnchorTemplates(forms);
-    const scores = MatcherEngine.matchAll(sourceCanvas, tpls, { angleRange, angleStep });
+    const scores = MatcherEngine.matchAll(sourceCanvas, tpls, { angleRange, angleStep, scaleFactors });
     const decision = FormVoting.decide(forms, scores, opts.voting || {});
     return { decision, scores };
   }
@@ -113,30 +124,29 @@ const Recognizer = (() => {
        （複数アンカーが取れればスケール=拡大率と位置ずれを同時に補正） */
     stage('原点の確定', 0.25);
     const anchors = form.anchors || [];
-    const pairs = [];
+    const allMatches = [];
     try {
       const tpls = await Promise.all(anchors.map(async a => ({ id: a.id, a, imageElement: await dataURLtoImg(a.dataURL) })));
-      const m = MatcherEngine.matchAll(rotated, tpls.map(t => ({ id: t.id, imageElement: t.imageElement })), { angleRange: 0, angleStep: 1 });
+      /* 角度固定・スケール探索で再マッチ（切り取り倍率の違いを吸収） */
+      const m = MatcherEngine.matchAll(rotated, tpls.map(t => ({ id: t.id, imageElement: t.imageElement })),
+        { angleRange: 0, angleStep: 1, scaleFactors: LOCALIZE_SCALES });
       tpls.forEach(t => {
         const r = m.get(t.id); if (!r) return;
-        if (r.score >= 0.4) {   // 信頼できる一致のみ採用
-          pairs.push({
-            refX: (t.a.refX || 0) + t.a.w / 2, refY: (t.a.refY || 0) + t.a.h / 2,   // 基準中心
-            inX:  r.loc.x + t.a.w / 2,         inY:  r.loc.y + t.a.h / 2,            // 入力中心
-            score: r.score,
-          });
-        }
+        const f = r.scale || 1;
+        allMatches.push({
+          refX: (t.a.refX || 0) + t.a.w / 2, refY: (t.a.refY || 0) + t.a.h / 2,         // 基準中心
+          inX:  r.loc.x + t.a.w * f / 2,     inY:  r.loc.y + t.a.h * f / 2,             // 入力中心（スケール考慮）
+          score: r.score, scale: f,
+        });
       });
-    } catch (_) { /* 失敗時は下のフォールバック */ }
+      allMatches.sort((a, b) => b.score - a.score);
+    } catch (_) { /* 失敗時は恒等変換 */ }
+    /* 信頼できる一致(>=0.4)で相似変換を推定。無ければ最良1点で best-effort */
+    const good = allMatches.filter(p => p.score >= 0.4);
     let transform;
-    if (pairs.length >= 1) {
-      transform = estimateSimilarity(pairs);
-    } else {
-      /* 信頼できる一致なし: 採用アンカー1点の平行移動にフォールバック */
-      const anchor = anchors.find(a => a.id === matchInfo.anchorId) || anchors[0];
-      const loc = matchInfo.loc || { x: anchor ? anchor.refX : 0, y: anchor ? anchor.refY : 0 };
-      transform = { scale: 1, tx: loc.x - (anchor?.refX || 0), ty: loc.y - (anchor?.refY || 0), n: 0 };
-    }
+    if (good.length >= 1)        transform = estimateSimilarity(good);
+    else if (allMatches.length)  transform = estimateSimilarity([allMatches[0]]);
+    else                         transform = { scale: 1, tx: 0, ty: 0, n: 0 };
 
     /* ⑤ 罫線除去（登録された罫線除去パラメータを引き継ぎ） */
     stage('罫線除去', 0.45);

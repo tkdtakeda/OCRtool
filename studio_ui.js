@@ -201,7 +201,8 @@ const StudioUI = (() => {
       ctx.fillText(`${i + 1}.${r.name}`, rx + 2, Math.max(10, ry - 2));
       ctx.textBaseline = 'alphabetic';
     });
-    $('rrAngle').textContent = `傾き補正 ${angle > 0 ? '+' : ''}${angle}°`;
+    const scalePct = Math.round((tf.scale || 1) * 100);
+    $('rrAngle').textContent = `傾き ${angle > 0 ? '+' : ''}${angle}° / 倍率 ${scalePct}% / アンカー${tf.n || 0}点`;
     return scale;
   }
 
