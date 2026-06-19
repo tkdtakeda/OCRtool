@@ -123,6 +123,10 @@
 .mini-item .mname { flex: 1; font-size: .76rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mini-item .mpos { font-size: .63rem; color: var(--c-text-3); font-family: 'IBM Plex Mono', monospace; }
 .mini-item .mthumb { width: 30px; height: 22px; object-fit: contain; border: 1px solid var(--c-border); border-radius: 2px; background: #fff; }
+.mini-region { display: flex; flex-direction: column; gap: 3px; }
+.mini-pattern { width: 100%; padding: 3px 7px; border: 1px solid var(--c-border); border-radius: var(--r-sm); font-family: 'IBM Plex Mono', monospace; font-size: .68rem; color: var(--c-text); background: #fff; }
+.mini-pattern:focus { outline: none; border-color: var(--c-pri); box-shadow: 0 0 0 2px var(--c-pri-lt); }
+.mini-pattern::placeholder { color: var(--c-text-3); }
 
 /* ════════════════════════════════════════════════════
    OCR実行ビュー
@@ -235,6 +239,8 @@
 .conf-badge.hi { background: #DCFCE7; color: #166534; }
 .conf-badge.mid { background: #FEF3C7; color: #92400E; }
 .conf-badge.lo { background: #FEE2E2; color: #991B1B; }
+.field-raw { font-family: 'IBM Plex Mono', monospace; font-size: .64rem; color: var(--c-text-3); max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.field-raw + .conf-badge { margin-left: 6px; }
 .field-text { width: 100%; border: none; padding: 7px 9px; font-family: 'IBM Plex Mono', monospace; font-size: .82rem; color: var(--c-text); resize: vertical; min-height: 34px; background: #fff; }
 .field-text:focus { outline: none; background: var(--c-pri-lt); }
 .save-status { padding: 4px 12px 10px; font-size: .72rem; color: var(--c-suc); }
